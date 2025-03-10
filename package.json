@@ -6,8 +6,10 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "nodemon",
-    "build": "tsc",
-    "dev": "NODE_OPTIONS='--loader ts-node/esm' ts-node-dev --respawn --transpile-only src/index.ts"
+    "build": "tsc && node scripts/fix-imports.js",
+    "postbuild": "tsc scripts/fix-imports.ts --outDir scripts --module commonjs && node scripts/fix-imports.js",
+    "dev": "tsx watch src/index.ts",
+    "prod": "node dist/index.js"
   },
   "keywords": [
     "ecommerce",
@@ -25,6 +27,7 @@
   "license": "ISC",
   "description": "WeBuy is a robust backend for an e-commerce platform, built using TypeScript, Node.js, Express, and MongoDB. It provides secure APIs for online shopping, product management, and order processing.",
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/compression": "^1.7.5",
     "@types/cookie-parser": "^1.4.8",
     "@types/cors": "^2.8.17",
@@ -34,18 +37,26 @@
     "@types/mongoose": "^5.11.96",
     "@types/morgan": "^1.9.9",
     "@types/node": "^22.13.10",
+    "glob": "^11.0.1",
     "nodemon": "^3.1.9",
     "ts-node": "^10.9.2",
+    "tsx": "^4.19.3",
     "typescript": "^5.8.2"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cloudinary": "^2.5.1",
     "compression": "^1.8.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "helmet": "^8.0.0",
+    "module-alias": "^2.2.3",
     "mongoose": "^8.12.1",
     "morgan": "^1.10.0"
+  },
+  "_moduleAliases": {
+    "@": "dist/"
   }
 }

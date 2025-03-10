@@ -5,12 +5,15 @@ import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import cors from "cors";
 import morgan from "morgan";
-import http from "http";
+import http from "node:http";
 import compression from "compression";
 
 // Utilities
+import { errorHandler, notFound } from "./middlewares/errorHandler.js";
+import connectDB from "./config/db.js";
 
 // Database Connection
+connectDB();
 
 dotenv.config();
 const port = process.env.PORT_NUMBER || 4200;
@@ -35,8 +38,8 @@ app.use(cookieParser());
 // Routes
 
 // Error Handling Middleware
-// app.use(notFound);
-// app.use(errorHandler);
+app.use(notFound);
+app.use(errorHandler);
 
 const server = http.createServer(app);
 server.listen(port, () => {
