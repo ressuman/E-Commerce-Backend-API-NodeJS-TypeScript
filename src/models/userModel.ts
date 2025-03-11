@@ -9,7 +9,7 @@ export enum UserRole {
   ADMIN = "admin",
 }
 
-type UserPermissions = {
+export type UserPermissions = {
   canManageProducts: boolean;
   canManageOrders: boolean;
   canManageUsers: boolean;
@@ -37,6 +37,9 @@ export interface IUser extends Document {
   isVerified: boolean;
   createdAt: Date;
   updatedAt: Date;
+  passwordConfirm?: string;
+  // Virtual type definitions
+  comparePassword(candidatePassword: string): Promise<boolean>;
 }
 
 // 3. Role-based permissions configuration
@@ -111,10 +114,6 @@ const UserSchema = new Schema<IUser>(
       type: String,
       enum: Object.values(UserRole),
       default: UserRole.CUSTOMER,
-      set: function (role: UserRole) {
-        this.permissions = rolePermissions[role];
-        return role;
-      },
     },
     permissions: {
       type: {
@@ -133,9 +132,11 @@ const UserSchema = new Schema<IUser>(
         select: false,
         validate: {
           validator: function (this: IUser, value: string) {
-            // Only validate when password is modified or new
             if (!this.isModified("authentication.password")) return true;
-            return value === (this as any).passwordConfirm;
+            return (
+              value ===
+              (this as IUser & { passwordConfirm?: string }).passwordConfirm
+            );
           },
           message: "Passwords do not match!",
         },
@@ -188,11 +189,35 @@ const UserSchema = new Schema<IUser>(
 // 5. Add virtual field for password confirmation
 UserSchema.virtual("passwordConfirm")
   .get(function (this: IUser) {
-    return this.authentication.password;
+    return (this as IUser & { _passwordConfirm?: string })._passwordConfirm;
   })
   .set(function (this: IUser, value: string) {
-    this.authentication.password = value;
+    (this as IUser & { _passwordConfirm?: string })._passwordConfirm = value;
   });
+
+UserSchema.pre<IUser>("save", async function (next) {
+  if (!this.isModified("authentication.password")) return next();
+
+  try {
+    const salt = await bcrypt.genSalt(12);
+    this.authentication.salt = salt;
+    this.authentication.password = await bcrypt.hash(
+      this.authentication.password,
+      salt
+    );
+    (this as IUser & { _passwordConfirm?: string })._passwordConfirm =
+      undefined;
+    next();
+  } catch (error: unknown) {
+    next(error instanceof Error ? error : new Error("Password hashing failed"));
+  }
+});
+
+UserSchema.methods.comparePassword = async function (
+  candidatePassword: string
+): Promise<boolean> {
+  return bcrypt.compare(candidatePassword, this.authentication.password);
+};
 
 // 6. Add indexes
 UserSchema.index({ email: 1 }, { unique: true });
@@ -204,10 +229,12 @@ interface UserModel extends Model<IUser> {
   getUserById(id: string): Promise<IUser | null>;
   getUserByEmail(email: string): Promise<IUser | null>;
   getUserBySessionToken(sessionToken: string): Promise<IUser | null>;
-  createUser(values: Record<string, any>): Promise<IUser>;
+  createUser(
+    values: Omit<IUser, keyof Document | "comparePassword">
+  ): Promise<IUser>;
   updateUserById(
     id: string,
-    values: Record<string, any>
+    values: Partial<Omit<IUser, keyof Document | "comparePassword">>
   ): Promise<IUser | null>;
   deleteUserById(id: string): Promise<IUser | null>;
 }
@@ -242,6 +269,11 @@ UserSchema.statics.updateUserById = function (
 UserSchema.statics.deleteUserById = function (id: string) {
   return this.findByIdAndDelete(id);
 };
+
+// 9. Add virtual ID field
+UserSchema.virtual("id").get(function (this: IUser) {
+  return (this._id as unknown as { toHexString: () => string }).toHexString();
+});
 
 // 8. Export the model
 const User = model<IUser, UserModel>("User", UserSchema);
