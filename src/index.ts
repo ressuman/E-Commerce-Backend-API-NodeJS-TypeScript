@@ -7,10 +7,12 @@ import cors from "cors";
 import morgan from "morgan";
 import http from "node:http";
 import compression from "compression";
+import rateLimit from "express-rate-limit";
 
 // Utilities
 import { errorHandler, notFound } from "./middlewares/errorHandler.js";
-import connectDB from "./config/db.js";
+import connectDB from "@/config/db.js";
+import authRoutes from "@/routes/authenticationRoutes.js";
 
 // Database Connection
 connectDB();
@@ -34,8 +36,15 @@ app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 app.use(compression());
 app.use(cookieParser());
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 50,
+  message: "Too many requests from this IP, please try again later.",
+});
+app.use("/api", limiter);
 
 // Routes
+app.use("/api/v1/auth", authRoutes);
 
 // Error Handling Middleware
 app.use(notFound);

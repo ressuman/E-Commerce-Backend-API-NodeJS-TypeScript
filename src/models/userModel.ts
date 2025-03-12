@@ -1,4 +1,4 @@
-import { Document, Model, Schema, model } from "mongoose";
+import { Document, Model, QueryWithHelpers, Schema, model } from "mongoose";
 import bcrypt from "bcryptjs";
 
 // 1. Define user roles with enum and type
@@ -43,7 +43,7 @@ export interface IUser extends Document {
 }
 
 // 3. Role-based permissions configuration
-const rolePermissions: Record<UserRole, UserPermissions> = {
+export const rolePermissions: Record<UserRole, UserPermissions> = {
   [UserRole.CUSTOMER]: {
     canManageProducts: false,
     canManageOrders: false,
@@ -130,16 +130,6 @@ const UserSchema = new Schema<IUser>(
         required: [true, "Password is required"],
         minlength: [8, "Password must be at least 8 characters"],
         select: false,
-        validate: {
-          validator: function (this: IUser, value: string) {
-            if (!this.isModified("authentication.password")) return true;
-            return (
-              value ===
-              (this as IUser & { passwordConfirm?: string }).passwordConfirm
-            );
-          },
-          message: "Passwords do not match!",
-        },
       },
       salt: {
         type: String,
@@ -195,21 +185,32 @@ UserSchema.virtual("passwordConfirm")
     (this as IUser & { _passwordConfirm?: string })._passwordConfirm = value;
   });
 
-UserSchema.pre<IUser>("save", async function (next) {
-  if (!this.isModified("authentication.password")) return next();
+UserSchema.pre<IUser>("validate", async function (next) {
+  if (this.isModified("authentication.password") || this.isNew) {
+    // Manual password confirmation check
+    if (
+      !this.passwordConfirm ||
+      this.authentication.password !== this.passwordConfirm
+    ) {
+      return next(new Error("Passwords do not match"));
+    }
 
-  try {
-    const salt = await bcrypt.genSalt(12);
-    this.authentication.salt = salt;
-    this.authentication.password = await bcrypt.hash(
-      this.authentication.password,
-      salt
-    );
-    (this as IUser & { _passwordConfirm?: string })._passwordConfirm =
-      undefined;
+    try {
+      const salt = await bcrypt.genSalt(12);
+      this.authentication.salt = salt;
+      this.authentication.password = await bcrypt.hash(
+        this.authentication.password,
+        salt
+      );
+      this.passwordConfirm = undefined;
+      next();
+    } catch (error: unknown) {
+      next(
+        error instanceof Error ? error : new Error("Password hashing failed")
+      );
+    }
+  } else {
     next();
-  } catch (error: unknown) {
-    next(error instanceof Error ? error : new Error("Password hashing failed"));
   }
 });
 
@@ -219,23 +220,26 @@ UserSchema.methods.comparePassword = async function (
   return bcrypt.compare(candidatePassword, this.authentication.password);
 };
 
-// 6. Add indexes
-UserSchema.index({ email: 1 }, { unique: true });
-UserSchema.index({ username: 1 }, { unique: true });
-
 // 7. Static methods with TypeScript types
-interface UserModel extends Model<IUser> {
+export interface UserModel extends Model<IUser> {
   getUsers(): Promise<IUser[]>;
   getUserById(id: string): Promise<IUser | null>;
-  getUserByEmail(email: string): Promise<IUser | null>;
+  getUserByEmail(email: string): ReturnType<Model<IUser>["findOne"]>;
   getUserBySessionToken(sessionToken: string): Promise<IUser | null>;
   createUser(
-    values: Omit<IUser, keyof Document | "comparePassword">
+    values: Omit<
+      IUser,
+      keyof Document | "comparePassword" | "authentication.salt"
+    > & {
+      authentication: Omit<IUser["authentication"], "salt"> & {
+        password: string;
+      };
+    }
   ): Promise<IUser>;
   updateUserById(
     id: string,
     values: Partial<Omit<IUser, keyof Document | "comparePassword">>
-  ): Promise<IUser | null>;
+  ): QueryWithHelpers<IUser | null, IUser>;
   deleteUserById(id: string): Promise<IUser | null>;
 }
 
@@ -261,7 +265,7 @@ UserSchema.statics.createUser = function (values: Record<string, any>) {
 
 UserSchema.statics.updateUserById = function (
   id: string,
-  values: Record<string, any>
+  values: Partial<Omit<IUser, keyof Document | "comparePassword">>
 ) {
   return this.findByIdAndUpdate(id, values, { new: true });
 };

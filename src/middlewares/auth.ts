@@ -111,7 +111,7 @@ export const createAuthToken = (res: Response, userId: string): string => {
   }
 
   const token = jwt.sign({ userId }, process.env.JWT_SECRET, {
-    expiresIn: "30d",
+    expiresIn: "14d",
     algorithm: "HS256",
   });
 
@@ -122,7 +122,7 @@ export const createAuthToken = (res: Response, userId: string): string => {
       process.env.NODE_ENV === "production"
         ? SameSiteOptions.None
         : SameSiteOptions.Lax,
-    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    maxAge: 14 * 24 * 60 * 60 * 1000, // 14 days
   };
 
   res.cookie("jwt", token, cookieOptions);
