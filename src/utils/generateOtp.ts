@@ -1,7 +1,8 @@
+// src/utils/generateOtp.ts
 import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcryptjs";
 
-const OTP_EXPIRY_MINUTES = 15;
+export const OTP_EXPIRY_MINUTES = 15;
 
 export interface OTPData {
   code: string;

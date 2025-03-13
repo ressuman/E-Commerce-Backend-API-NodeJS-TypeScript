@@ -1,6 +1,6 @@
+// src/utils/email.ts
 import dotenv from "dotenv";
-import nodemailer from "nodemailer";
-import { Transporter } from "nodemailer";
+import nodemailer, { Transporter } from "nodemailer";
 import { SentMessageInfo } from "nodemailer/lib/smtp-transport";
 
 dotenv.config();

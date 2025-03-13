@@ -1,3 +1,4 @@
+// src/models/userModel.ts
 import { Document, Model, QueryWithHelpers, Schema, model } from "mongoose";
 import bcrypt from "bcryptjs";
 

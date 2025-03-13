@@ -1,4 +1,4 @@
-// src/middlewares/validate.ts
+// src/utils/validate.ts
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { ZodError, ZodSchema } from "zod";
@@ -6,11 +6,6 @@ import { ZodError, ZodSchema } from "zod";
 export const validate =
   (schema: ZodSchema) => (req: Request, res: Response, next: NextFunction) => {
     try {
-      // schema.parse({
-      //   body: req.body,
-      //   query: req.query,
-      //   params: req.params,
-      // });
       schema.parse(req.body);
       next();
     } catch (err) {
@@ -51,3 +46,28 @@ export const verifyEmailSchema = z.object({
   email: z.string().email(),
   otp: z.string().length(6, "OTP must be 6 digits"),
 });
+
+export const loginSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(1, "Password is required"),
+});
+
+export const resendOtpSchema = z.object({
+  email: z.string().email(),
+});
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+export const resetPasswordSchema = z
+  .object({
+    email: z.string().email(),
+    newPassword: z.string().min(8),
+    passwordConfirm: z.string().min(8),
+    resetOtp: z.string().length(6, "OTP must be 6 digits"),
+  })
+  .refine((data) => data.newPassword === data.passwordConfirm, {
+    message: "Passwords do not match",
+    path: ["passwordConfirm"],
+  });

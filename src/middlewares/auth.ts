@@ -3,7 +3,6 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import User, { IUser, UserPermissions, UserRole } from "@/models/userModel.js";
 import { asyncHandler } from "./asyncHandler.js";
-//import User, { IUser, UserRole, UserPermissions } from "../models/userModel";
 
 declare global {
   namespace NodeJS {

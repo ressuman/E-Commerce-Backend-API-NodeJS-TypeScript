@@ -1,7 +1,13 @@
+// src/controllers/authenticationControllers.ts
+// Dependencies
 import { NextFunction, Request, Response } from "express";
 import { asyncHandler } from "@/middlewares/asyncHandler.js";
 import User, { IUser, rolePermissions, UserRole } from "@/models/userModel.js";
-import { generateOTP, verifyOTP } from "@/utils/generateOtp.js";
+import {
+  generateOTP,
+  OTP_EXPIRY_MINUTES,
+  verifyOTP,
+} from "@/utils/generateOtp.js";
 import { createAuthToken } from "@/middlewares/auth.js";
 import sendEmail from "@/utils/email.js";
 
@@ -20,6 +26,38 @@ interface VerifyEmailRequest {
   otp: string;
 }
 
+interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+interface AuthStatusResponse {
+  status: "authenticated" | "unauthenticated";
+  user?: {
+    id: string;
+    email: string;
+    role: UserRole;
+    isVerified: boolean;
+  };
+}
+
+interface ResendOtpRequest {
+  email: string;
+}
+
+interface ForgotPasswordRequest {
+  email: string;
+}
+
+interface ResetPasswordRequest {
+  email: string;
+  newPassword: string;
+  passwordConfirm: string;
+  resetOtp: string;
+}
+
+// Controller functions
+// Signup Controller
 export const signup = asyncHandler(
   async (
     req: Request<{}, {}, SignupRequest>,
@@ -187,6 +225,7 @@ The Team`;
   }
 );
 
+// Verify Email Controller
 export const verifyEmail = asyncHandler(
   async (
     req: Request<{}, {}, VerifyEmailRequest>,
@@ -270,6 +309,422 @@ export const verifyEmail = asyncHandler(
         role: updatedUser.role,
         isVerified: updatedUser.isVerified,
       },
+    });
+  }
+);
+
+// Login Controller
+export const login = asyncHandler(
+  async (
+    req: Request<{}, {}, LoginRequest>,
+    res: Response,
+    next: NextFunction
+  ) => {
+    const { email, password } = req.body as { email: string; password: string };
+
+    // 1. Check if email and password exist
+    if (!email || !password) {
+      return res.status(400).json({
+        status: "error",
+        message: "Please provide email and password",
+      });
+    }
+
+    // 2. Get user with authentication fields
+    const user = await User.getUserByEmail(email).select(
+      "+authentication.password +authentication.salt +isVerified"
+    );
+
+    // 3. Check if user exists and is verified
+    if (!user || !user.isVerified) {
+      return res.status(401).json({
+        status: "error",
+        message: "Invalid credentials or account not verified",
+      });
+    }
+
+    // 4. Check if password is correct
+    const validPassword = await user.comparePassword(password);
+    if (!validPassword) {
+      return res.status(401).json({
+        status: "error",
+        message: "Invalid credentials",
+      });
+    }
+
+    // 5. Generate new token and send response
+    createAuthToken(res, user._id.toString());
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+        isVerified: user.isVerified,
+      },
+    });
+  }
+);
+
+// Logout Controller
+export const logout = asyncHandler(async (req: Request, res: Response) => {
+  res.cookie("jwt", "loggedOut", {
+    expires: new Date(Date.now() + 1000),
+    httpOnly: true,
+  });
+
+  res.status(200).json({
+    status: "success",
+    message: "Successfully logged out",
+  });
+});
+
+// Check Authentication Status Controller
+export const checkAuthStatus = asyncHandler(
+  async (req: Request, res: Response<AuthStatusResponse>) => {
+    const token = req.cookies?.jwt;
+
+    if (!token) {
+      return res.json({
+        status: "unauthenticated",
+      });
+    }
+
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET) as JwtPayload;
+      const user = await User.findById(decoded.userId).select(
+        "-authentication -permissions -__v"
+      );
+
+      if (!user) {
+        return res.json({
+          status: "unauthenticated",
+        });
+      }
+
+      res.json({
+        status: "authenticated",
+        user: {
+          id: user._id.toString(),
+          email: user.email,
+          role: user.role,
+          isVerified: user.isVerified,
+        },
+      });
+    } catch (error) {
+      res.json({
+        status: "unauthenticated",
+      });
+    }
+  }
+);
+
+// Add these to your existing controller exports
+export const resendOtp = asyncHandler(
+  async (
+    req: Request<{}, {}, ResendOtpRequest>,
+    res: Response,
+    next: NextFunction
+  ) => {
+    const { email } = req.body as { email: string };
+
+    if (!email) {
+      return res.status(400).json({
+        status: "error",
+        message: "Email is required",
+      });
+    }
+
+    const user = await User.getUserByEmail(email).select(
+      "+authentication.otp +authentication.otpExpires +isVerified"
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        status: "error",
+        message: "User not found",
+      });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({
+        status: "error",
+        message: "Account already verified",
+      });
+    }
+
+    // Generate new OTP
+    const {
+      code: newOtp,
+      hashedCode: hashedNewOtp,
+      expiresAt: newOtpExpires,
+    } = await generateOTP();
+
+    // Update user with new OTP
+    const updatedUser = await User.updateUserById(user._id.toString(), {
+      "authentication.otp": hashedNewOtp,
+      "authentication.otpExpires": newOtpExpires,
+    });
+
+    // Send email using the same pattern as signup
+    const verificationUrl = `${
+      process.env.CLIENT_URL
+    }/verify-email?email=${encodeURIComponent(email)}&otp=${newOtp}`;
+
+    // Send email
+    const emailHTML = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        .container { max-width: 600px; margin: 20px auto; padding: 30px; border: 1px solid #e0e0e0; border-radius: 8px; }
+        .header { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 15px; }
+        .content { margin: 25px 0; line-height: 1.6; }
+        .otp { font-size: 24px; color: #3498db; letter-spacing: 3px; margin: 20px 0; }
+        .button { display: inline-block; padding: 12px 24px; background: #3498db; color: white; text-decoration: none; border-radius: 5px; }
+        .footer { margin-top: 30px; color: #7f8c8d; font-size: 14px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h2>New Verification OTP</h2>
+        </div>
+
+        <div class="content">
+          <p>Your new verification OTP is:</p>
+          <div class="otp">${newOtp}</div>
+          <p>This code will expire in ${OTP_EXPIRY_MINUTES} minutes.</p>
+
+          <p>Or click the button below to verify automatically:</p>
+          <a href="${verificationUrl}" class="button">Verify Email Now</a>
+        </div>
+
+        <div class="footer">
+          <p>If you didn't request this OTP, please contact support.</p>
+          <p>Best regards,<br>${process.env.APP_NAME || "The Team"}</p>
+        </div>
+      </div>
+    </body>
+    </html>
+    `;
+
+    await sendEmail({
+      email: user.email,
+      subject: "New Verification OTP",
+      html: emailHTML,
+      message: `Your new OTP is: ${newOtp} (valid for ${OTP_EXPIRY_MINUTES} minutes)`,
+    });
+
+    res.status(200).json({
+      status: "success",
+      message: "New OTP sent successfully",
+      data: {
+        email: user.email,
+        otpExpires: newOtpExpires,
+      },
+    });
+  }
+);
+
+export const forgotPassword = asyncHandler(
+  async (
+    req: Request<{}, {}, ForgotPasswordRequest>,
+    res: Response,
+    next: NextFunction
+  ) => {
+    const { email } = req.body as { email: string };
+
+    if (!email) {
+      return res.status(400).json({
+        status: "error",
+        message: "Email is required",
+      });
+    }
+
+    const user = await User.getUserByEmail(email).select("+isVerified");
+    if (!user || !user.isVerified) {
+      return res.status(404).json({
+        status: "error",
+        message: "No verified user found with this email",
+      });
+    }
+
+    // Generate reset OTP
+    const {
+      code: resetOtp,
+      hashedCode: hashedResetOtp,
+      expiresAt: resetOtpExpires,
+    } = await generateOTP();
+
+    // Update user with reset OTP
+    const updatedUser = await User.updateUserById(user._id.toString(), {
+      "authentication.resetPasswordToken": hashedResetOtp,
+      "authentication.resetPasswordExpires": resetOtpExpires,
+    });
+
+    // Send reset email
+    const resetUrl = `${
+      process.env.CLIENT_URL
+    }/reset-password?email=${encodeURIComponent(email)}&otp=${resetOtp}`;
+
+    const emailHTML = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        .container { max-width: 600px; margin: 20px auto; padding: 30px; border: 1px solid #e0e0e0; border-radius: 8px; }
+        .header { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 15px; }
+        .content { margin: 25px 0; line-height: 1.6; }
+        .otp { font-size: 24px; color: #3498db; letter-spacing: 3px; margin: 20px 0; }
+        .button { display: inline-block; padding: 12px 24px; background: #3498db; color: white; text-decoration: none; border-radius: 5px; }
+        .footer { margin-top: 30px; color: #7f8c8d; font-size: 14px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h2>Password Reset Request</h2>
+        </div>
+
+        <div class="content">
+          <p>Your password reset OTP is:</p>
+          <div class="otp">${resetOtp}</div>
+          <p>This code will expire in ${OTP_EXPIRY_MINUTES} minutes.</p>
+
+          <p>Or click the button below to reset your password:</p>
+          <a href="${resetUrl}" class="button">Reset Password Now</a>
+        </div>
+
+        <div class="footer">
+          <p>If you didn't request this password reset, please secure your account.</p>
+          <p>Best regards,<br>${process.env.APP_NAME || "The Team"}</p>
+        </div>
+      </div>
+    </body>
+    </html>
+    `;
+
+    await sendEmail({
+      email: user.email,
+      subject: "Password Reset OTP",
+      html: emailHTML,
+      message: `Your password reset OTP is: ${resetOtp} (valid for ${OTP_EXPIRY_MINUTES} minutes)`,
+    });
+
+    res.status(200).json({
+      status: "success",
+      message: "Password reset OTP sent",
+      data: {
+        email: user.email,
+        resetOtpExpires: resetOtpExpires,
+      },
+    });
+  }
+);
+
+export const resetPassword = asyncHandler(
+  async (
+    req: Request<{}, {}, ResetPasswordRequest>,
+    res: Response,
+    next: NextFunction
+  ) => {
+    const { email, newPassword, resetOtp } = req.body as {
+      email: string;
+      newPassword: string;
+      resetOtp: string;
+    };
+
+    const user = await User.getUserByEmail(email).select(
+      "+authentication.resetPasswordToken +authentication.resetPasswordExpires"
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        status: "error",
+        message: "User not found",
+      });
+    }
+
+    if (
+      !user.authentication.resetPasswordToken ||
+      !user.authentication.resetPasswordExpires
+    ) {
+      return res.status(400).json({
+        status: "error",
+        message: "No active password reset request",
+      });
+    }
+
+    const isValid = verifyOTP(
+      resetOtp,
+      user.authentication.resetPasswordToken,
+      user.authentication.resetPasswordExpires
+    );
+
+    if (!isValid) {
+      return res.status(400).json({
+        status: "error",
+        message: "Invalid or expired OTP",
+      });
+    }
+
+    // Update password
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    const updatedUser = await User.updateUserById(user._id.toString(), {
+      "authentication.password": hashedPassword,
+      "authentication.salt": salt,
+      "authentication.resetPasswordToken": null,
+      "authentication.resetPasswordExpires": null,
+      "authentication.sessionToken": null, // Invalidate all sessions
+    });
+
+    // Send confirmation email
+    const emailHTML = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        .container { max-width: 600px; margin: 20px auto; padding: 30px; border: 1px solid #e0e0e0; border-radius: 8px; }
+        .header { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 15px; }
+        .content { margin: 25px 0; line-height: 1.6; }
+        .footer { margin-top: 30px; color: #7f8c8d; font-size: 14px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h2>Password Updated Successfully</h2>
+        </div>
+
+        <div class="content">
+          <p>Your password was successfully updated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}.</p>
+          <p>All existing sessions have been terminated for security reasons.</p>
+        </div>
+
+        <div class="footer">
+          <p>If you didn't make this change, please contact support immediately.</p>
+          <p>Best regards,<br>${process.env.APP_NAME || "The Team"}</p>
+        </div>
+      </div>
+    </body>
+    </html>
+    `;
+
+    // Send confirmation email
+    await sendEmail({
+      email: user.email,
+      subject: "Password Changed Successfully",
+      message: `<p>Your password was successfully updated at ${new Date().toLocaleString()}</p>`,
+      html: emailHTML,
+    });
+
+    res.status(200).json({
+      status: "success",
+      message: "Password reset successful",
     });
   }
 );
