@@ -35,6 +35,7 @@ interface AuthStatusResponse {
   status: "authenticated" | "unauthenticated";
   user?: {
     id: string;
+    username: string;
     email: string;
     role: UserRole;
     isVerified: boolean;
@@ -52,7 +53,7 @@ interface ForgotPasswordRequest {
 interface ResetPasswordRequest {
   email: string;
   newPassword: string;
-  passwordConfirm: string;
+  newPasswordConfirm: string;
   resetOtp: string;
 }
 
@@ -297,11 +298,15 @@ export const verifyEmail = asyncHandler(
 
     // Generate JWT token
     //createAuthToken(res, updatedUser!._id.toString());
-    createAuthToken(res, (updatedUser!._id as Types.ObjectId).toString());
+    const token = createAuthToken(
+      res,
+      (updatedUser!._id as Types.ObjectId).toString()
+    );
 
     res.status(200).json({
       status: "success",
       message: "Account verified successfully",
+      token,
       data: {
         id: updatedUser._id,
         username: user.username,
@@ -336,10 +341,17 @@ export const login = asyncHandler(
     );
 
     // 3. Check if user exists and is verified
-    if (!user || !user.isVerified) {
+    if (!user) {
       return res.status(401).json({
         status: "error",
-        message: "Invalid credentials or account not verified",
+        message: "Invalid credentials",
+      });
+    }
+
+    if (!user.isVerified) {
+      return res.status(401).json({
+        status: "error",
+        message: "Account not verified. Please verify your email.",
       });
     }
 
@@ -353,12 +365,15 @@ export const login = asyncHandler(
     }
 
     // 5. Generate new token and send response
-    createAuthToken(res, user._id.toString());
+    const token = createAuthToken(res, user._id.toString());
 
     res.status(200).json({
       status: "success",
+      message: "Logged in successfully",
+      token,
       data: {
         id: user._id,
+        username: user.username,
         email: user.email,
         role: user.role,
         isVerified: user.isVerified,
@@ -370,8 +385,10 @@ export const login = asyncHandler(
 // Logout Controller
 export const logout = asyncHandler(async (req: Request, res: Response) => {
   res.cookie("jwt", "loggedOut", {
-    expires: new Date(Date.now() + 1000),
+    expires: new Date(Date.now() + 1000), // expires in 1 second
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
   });
 
   res.status(200).json({
@@ -383,40 +400,21 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
 // Check Authentication Status Controller
 export const checkAuthStatus = asyncHandler(
   async (req: Request, res: Response<AuthStatusResponse>) => {
-    const token = req.cookies?.jwt;
-
-    if (!token) {
-      return res.json({
-        status: "unauthenticated",
-      });
+    if (!req.user) {
+      return res.json({ status: "unauthenticated" });
     }
 
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET) as JwtPayload;
-      const user = await User.findById(decoded.userId).select(
-        "-authentication -permissions -__v"
-      );
-
-      if (!user) {
-        return res.json({
-          status: "unauthenticated",
-        });
-      }
-
-      res.json({
-        status: "authenticated",
-        user: {
-          id: user._id.toString(),
-          email: user.email,
-          role: user.role,
-          isVerified: user.isVerified,
-        },
-      });
-    } catch (error) {
-      res.json({
-        status: "unauthenticated",
-      });
-    }
+    res.json({
+      status: "success",
+      message: "authenticated",
+      user: {
+        id: req.user._id.toString(),
+        username: req.user.username,
+        email: req.user.email,
+        role: req.user.role,
+        isVerified: req.user.isVerified,
+      },
+    });
   }
 );
 
@@ -471,6 +469,11 @@ export const resendOtp = asyncHandler(
     const verificationUrl = `${
       process.env.CLIENT_URL
     }/verify-email?email=${encodeURIComponent(email)}&otp=${newOtp}`;
+    const VerificationLink = `${req.protocol}://${req.get(
+      "host"
+    )}/api/v1/auth/verify-email?email=${encodeURIComponent(
+      email
+    )}&otp=${newOtp}`;
 
     // Send email
     const emailHTML = `
@@ -499,6 +502,7 @@ export const resendOtp = asyncHandler(
 
           <p>Or click the button below to verify automatically:</p>
           <a href="${verificationUrl}" class="button">Verify Email Now</a>
+          <p>Or click <a href="${VerificationLink}">here</a> to verify your email. This link expires in 10 minutes.</p>
         </div>
 
         <div class="footer">
@@ -551,6 +555,16 @@ export const forgotPassword = asyncHandler(
       });
     }
 
+    const existingUser = await User.getUserByEmail(email).select(
+      "+authentication.resetPasswordToken +authentication.resetPasswordExpires"
+    );
+    if (!existingUser) {
+      return res.status(404).json({
+        status: "error",
+        message: "No user found with this email",
+      });
+    }
+
     // Generate reset OTP
     const {
       code: resetOtp,
@@ -568,6 +582,11 @@ export const forgotPassword = asyncHandler(
     const resetUrl = `${
       process.env.CLIENT_URL
     }/reset-password?email=${encodeURIComponent(email)}&otp=${resetOtp}`;
+    const resetLink = `${req.protocol}://${req.get(
+      "host"
+    )}/api/v1/auth/reset-password?email=${encodeURIComponent(
+      email
+    )}&otp=${resetOtp}`;
 
     const emailHTML = `
     <!DOCTYPE html>
@@ -595,6 +614,7 @@ export const forgotPassword = asyncHandler(
 
           <p>Or click the button below to reset your password:</p>
           <a href="${resetUrl}" class="button">Reset Password Now</a>
+          <p>Or click <a href="${resetLink}">here</a> to reset your password. This link expires in 10 minutes.</p>
         </div>
 
         <div class="footer">
@@ -630,60 +650,100 @@ export const resetPassword = asyncHandler(
     res: Response,
     next: NextFunction
   ) => {
-    const { email, newPassword, resetOtp } = req.body as {
+    const { email, newPassword, newPasswordConfirm, resetOtp } = req.body as {
       email: string;
       newPassword: string;
+      newPasswordConfirm: string;
       resetOtp: string;
     };
 
-    const user = await User.getUserByEmail(email).select(
-      "+authentication.resetPasswordToken +authentication.resetPasswordExpires"
-    );
-
-    if (!user) {
-      return res.status(404).json({
-        status: "error",
-        message: "User not found",
-      });
-    }
-
-    if (
-      !user.authentication.resetPasswordToken ||
-      !user.authentication.resetPasswordExpires
-    ) {
+    if (!email || !newPassword || !newPasswordConfirm || !resetOtp) {
       return res.status(400).json({
         status: "error",
-        message: "No active password reset request",
+        message: "All fields are required",
       });
     }
 
-    const isValid = verifyOTP(
-      resetOtp,
-      user.authentication.resetPasswordToken,
-      user.authentication.resetPasswordExpires
-    );
-
-    if (!isValid) {
+    if (newPassword !== newPasswordConfirm) {
       return res.status(400).json({
         status: "error",
-        message: "Invalid or expired OTP",
+        message: "Passwords do not match",
       });
     }
 
-    // Update password
-    const salt = await bcrypt.genSalt(12);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        status: "error",
+        message: "Password must be at least 8 characters long",
+      });
+    }
 
-    const updatedUser = await User.updateUserById(user._id.toString(), {
-      "authentication.password": hashedPassword,
-      "authentication.salt": salt,
-      "authentication.resetPasswordToken": null,
-      "authentication.resetPasswordExpires": null,
-      "authentication.sessionToken": null, // Invalidate all sessions
-    });
+    try {
+      const user = await User.getUserByEmail(email).select(
+        "+authentication.resetPasswordToken +authentication.resetPasswordExpires"
+      );
 
-    // Send confirmation email
-    const emailHTML = `
+      if (!user) {
+        return res.status(404).json({
+          status: "error",
+          message: "User not found",
+        });
+      }
+
+      if (
+        !user.authentication.resetPasswordToken ||
+        !user.authentication.resetPasswordExpires
+      ) {
+        return res.status(400).json({
+          status: "error",
+          message: "No active password reset request",
+        });
+      }
+
+      // Verify OTP
+      const isValid = verifyOTP(
+        resetOtp,
+        user.authentication.resetPasswordToken,
+        user.authentication.resetPasswordExpires
+      );
+
+      if (!isValid) {
+        return res.status(400).json({
+          status: "error",
+          message: "Invalid or expired OTP",
+        });
+      }
+
+      // Get user document for proper hook execution
+      const userToUpdate = await User.getUserById(user._id.toString());
+      if (!userToUpdate) {
+        return res.status(404).json({
+          status: "error",
+          message: "User not found",
+        });
+      }
+
+      // Set new password and confirmation
+      userToUpdate.authentication.password = newPassword;
+      userToUpdate.passwordConfirm = newPasswordConfirm;
+
+      // Save with hook execution
+      await userToUpdate.save();
+
+      // Clear reset token and invalidate sessions
+      await User.updateUserById(user._id.toString(), {
+        "authentication.resetPasswordToken": null,
+        "authentication.resetPasswordExpires": null,
+        "authentication.sessionToken": null,
+      });
+
+      // Send confirmation email
+      const loginUrl = `${process.env.FRONTEND_URL}/login`;
+      const loginLink = `${req.protocol}://${
+        req.headers.host
+      }?email=${encodeURIComponent(user.email)}`;
+
+      const emailHTML = `
     <!DOCTYPE html>
     <html>
     <head>
@@ -702,6 +762,9 @@ export const resetPassword = asyncHandler(
 
         <div class="content">
           <p>Your password was successfully updated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}.</p>
+          <p>Click the link below to log in to your account:</p>
+          <a href="${loginUrl}" class="button">Log In Now</a>
+          <p>Click <a href="${loginLink}">here</a> to log in to your account.</p>
           <p>All existing sessions have been terminated for security reasons.</p>
         </div>
 
@@ -714,17 +777,24 @@ export const resetPassword = asyncHandler(
     </html>
     `;
 
-    // Send confirmation email
-    await sendEmail({
-      email: user.email,
-      subject: "Password Changed Successfully",
-      message: `<p>Your password was successfully updated at ${new Date().toLocaleString()}</p>`,
-      html: emailHTML,
-    });
+      // Send confirmation email
+      await sendEmail({
+        email: user.email,
+        subject: "Password Changed Successfully",
+        message: `<p>Your password was successfully updated at ${new Date().toLocaleString()}</p>`,
+        html: emailHTML,
+      });
 
-    res.status(200).json({
-      status: "success",
-      message: "Password reset successful",
-    });
+      res.status(200).json({
+        status: "success",
+        message: "Password reset successful",
+      });
+    } catch (error) {
+      return res.status(500).json({
+        status: "error",
+        message: "Password reset failed",
+        error: error.message,
+      });
+    }
   }
 );

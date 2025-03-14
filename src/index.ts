@@ -13,6 +13,7 @@ import rateLimit from "express-rate-limit";
 import { errorHandler, notFound } from "./middlewares/errorHandler.js";
 import connectDB from "@/config/db.js";
 import authRoutes from "@/routes/authenticationRoutes.js";
+import userRoutes from "@/routes/userRoutes.js";
 
 // Database Connection
 connectDB();
@@ -47,6 +48,7 @@ app.use("/api", limiter);
 
 // Routes
 app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/users", userRoutes);
 
 // Error Handling Middleware
 app.use(notFound);

@@ -15,22 +15,19 @@ export const asyncHandler = <T = void>(
   };
 };
 
-// Key Professional Considerations:
+export class AppError extends Error {
+  statusCode: number;
 
-// Role Management:
+  constructor(message: string, statusCode: number = 400) {
+    super(message);
+    this.statusCode = statusCode;
+    Object.setPrototypeOf(this, AppError.prototype);
+  }
 
-// typescript
-// Copy
-// role: UserRole.CUSTOMER // Default role
-// Public signups always create CUSTOMER roles
-
-// Elevated roles (ADMIN/MODERATOR/SUPPORT) should be assigned through:
-
-// Internal admin interfaces
-
-// Invitation-only systems
-
-// Automated business logic (e.g., first user becomes admin)
-//
-//  **Security**: Prevent role assignment during public signup to avoid privilege escalation.
-// - **Role Assignment**: Public signup should default to Customer. Other roles should be assigned through an admin interface or a secure invitation system, not during regular signup.
+  toJSON() {
+    return {
+      status: "error",
+      message: this.message,
+    };
+  }
+}

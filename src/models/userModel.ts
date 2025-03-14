@@ -36,6 +36,9 @@ export interface IUser extends Document {
     resetPasswordExpires?: Date;
   };
   isVerified: boolean;
+  isActive: boolean;
+  deactivationReason?: string;
+  deactivatedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
   passwordConfirm?: string;
@@ -162,6 +165,12 @@ const UserSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    deactivationReason: String,
+    deactivatedAt: Date,
   },
   {
     timestamps: true,

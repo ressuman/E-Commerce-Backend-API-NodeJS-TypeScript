@@ -1,4 +1,5 @@
 // src/utils/validate.ts
+import { UserRole } from "@/models/userModel.js";
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { ZodError, ZodSchema } from "zod";
@@ -64,10 +65,51 @@ export const resetPasswordSchema = z
   .object({
     email: z.string().email(),
     newPassword: z.string().min(8),
-    passwordConfirm: z.string().min(8),
+    newPasswordConfirm: z.string().min(8),
     resetOtp: z.string().length(6, "OTP must be 6 digits"),
   })
-  .refine((data) => data.newPassword === data.passwordConfirm, {
+  .refine((data) => data.newPassword === data.newPasswordConfirm, {
     message: "Passwords do not match",
-    path: ["passwordConfirm"],
+    path: [" newPasswordConfirm"],
   });
+
+export const createUserSchema = z.object({
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  email: z.string().email(),
+  role: z.nativeEnum(UserRole).default(UserRole.CUSTOMER),
+  password: z.string().min(8),
+});
+
+export const updateUserSchema = z
+  .object({
+    firstName: z.string().min(1).max(50).optional(),
+    lastName: z.string().min(1).max(50).optional(),
+    username: z
+      .string()
+      .min(3)
+      .regex(/^[a-zA-Z0-9_]+$/)
+      .optional(),
+    email: z.string().email().optional(),
+    role: z.nativeEnum(UserRole).optional(),
+    password: z.string().min(8).optional(),
+  })
+  .strict();
+
+export const roleUpdateSchema = z.object({
+  role: z.nativeEnum(UserRole),
+});
+
+export const permissionsSchema = z.object({
+  permissions: z.object({
+    canManageProducts: z.boolean().optional(),
+    canManageOrders: z.boolean().optional(),
+    canManageUsers: z.boolean().optional(),
+    canManageCategories: z.boolean().optional(),
+    canAccessAnalytics: z.boolean().optional(),
+  }),
+});
+
+export const deactivationSchema = z.object({
+  reason: z.string().min(10).max(500),
+});

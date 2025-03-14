@@ -21,6 +21,8 @@ declare module "express" {
 
 export interface JwtPayload {
   userId: string;
+  iat: number;
+  exp: number;
 }
 
 export enum SameSiteOptions {
@@ -40,28 +42,28 @@ export const authenticate = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
     const token = req.cookies?.jwt;
 
-    if (!token) {
-      res.status(401);
-      throw new Error("Authorization failed: No authentication token");
-    }
+    if (token) {
+      try {
+        const decoded = jwt.verify(
+          token,
+          process.env.JWT_SECRET!
+        ) as JwtPayload;
 
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET) as JwtPayload;
-      const user = await User.findById(decoded.userId)
-        .select("-authentication")
-        .lean<IUser>();
+        const user = await User.findById(decoded.userId)
+          .select(
+            "_id email role isVerified firstName lastName username authentication permissions"
+          )
+          .lean<IUser>();
 
-      if (!user || !user.isVerified) {
-        res.status(401);
-        throw new Error("Authorization failed: User not verified or not found");
+        if (user && user.isVerified) {
+          req.user = user; // Attach lean user object
+        }
+      } catch (error) {
+        // Silent failure - just don't attach user
+        console.error("Authentication error:", error);
       }
-
-      req.user = user;
-      next();
-    } catch (error) {
-      res.status(401);
-      throw new Error("Authorization failed: Invalid or expired token");
     }
+    next();
   }
 );
 
@@ -126,6 +128,18 @@ export const createAuthToken = (res: Response, userId: string): string => {
 
   res.cookie("jwt", token, cookieOptions);
   return token;
+};
+
+export const requireAuth = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  if (!req.user) {
+    res.status(401);
+    throw new Error("Not authenticated");
+  }
+  next();
 };
 
 // Specific role authorizers
