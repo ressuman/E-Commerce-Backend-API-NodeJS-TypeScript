@@ -73,13 +73,23 @@ export const resetPasswordSchema = z
     path: [" newPasswordConfirm"],
   });
 
-export const createUserSchema = z.object({
-  firstName: z.string().min(1),
-  lastName: z.string().min(1),
-  email: z.string().email(),
-  role: z.nativeEnum(UserRole).default(UserRole.CUSTOMER),
-  password: z.string().min(8),
-});
+export const createUserSchema = z
+  .object({
+    firstName: z.string().min(1),
+    lastName: z.string().min(1),
+    username: z
+      .string()
+      .min(3)
+      .regex(/^[a-zA-Z0-9_]+$/),
+    email: z.string().email(),
+    role: z.nativeEnum(UserRole).default(UserRole.CUSTOMER),
+    password: z.string().min(8),
+    passwordConfirm: z.string().min(8),
+  })
+  .refine((data) => data.password === data.passwordConfirm, {
+    message: "Passwords do not match",
+    path: ["passwordConfirm"],
+  });
 
 export const updateUserSchema = z
   .object({
@@ -87,12 +97,14 @@ export const updateUserSchema = z
     lastName: z.string().min(1).max(50).optional(),
     username: z
       .string()
-      .min(3)
-      .regex(/^[a-zA-Z0-9_]+$/)
+      .min(3, "Username must be at least 3 characters")
+      .regex(/^[a-zA-Z0-9_]+$/, "Only letters, numbers and underscores allowed")
       .optional(),
-    email: z.string().email().optional(),
+    email: z.string().email("Invalid email format").optional(),
     role: z.nativeEnum(UserRole).optional(),
     password: z.string().min(8).optional(),
+    isActive: z.boolean().optional(),
+    isVerified: z.boolean().optional(),
   })
   .strict();
 

@@ -124,6 +124,7 @@ const UserSchema = new Schema<IUser>(
         canManageProducts: Boolean,
         canManageOrders: Boolean,
         canManageUsers: Boolean,
+        canManageCategories: Boolean,
         canAccessAnalytics: Boolean,
       },
       default: rolePermissions[UserRole.CUSTOMER],
@@ -254,11 +255,15 @@ export interface UserModel extends Model<IUser> {
 }
 
 UserSchema.statics.getUsers = function () {
-  return this.find({});
+  return this.find({}).select(
+    "firstName lastName username email role permissions isVerified isActive createdAt updatedAt"
+  );
 };
 
 UserSchema.statics.getUserById = function (id: string) {
-  return this.findById(id);
+  return this.findById(id).select(
+    "firstName lastName username email role permissions isVerified isActive createdAt updatedAt"
+  );
 };
 
 UserSchema.statics.getUserByEmail = function (email: string) {
