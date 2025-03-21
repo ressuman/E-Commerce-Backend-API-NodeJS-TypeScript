@@ -2,7 +2,7 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import User, { IUser, UserPermissions, UserRole } from "@/models/userModel.js";
-import { asyncHandler } from "./asyncHandler.js";
+import { AppError, asyncHandler } from "./asyncHandler.js";
 
 declare global {
   namespace NodeJS {
@@ -49,11 +49,13 @@ export const authenticate = asyncHandler(
           process.env.JWT_SECRET!
         ) as JwtPayload;
 
-        const user = await User.findById(decoded.userId)
-          .select(
-            "_id email role isVerified firstName lastName username authentication permissions"
-          )
-          .lean<IUser>();
+        const user = await User.findById(decoded.userId).select(
+          "+authentication.password +authentication.salt"
+        );
+        // .select(
+        //   "_id email role isVerified firstName lastName username authentication permissions"
+        // )
+        // .lean<IUser>();
 
         if (user && user.isVerified) {
           req.user = user; // Attach lean user object
@@ -61,6 +63,7 @@ export const authenticate = asyncHandler(
       } catch (error) {
         // Silent failure - just don't attach user
         console.error("Authentication error:", error);
+        res.clearCookie("jwt");
       }
     }
     next();
@@ -73,15 +76,14 @@ export const authorize = (
 ) => {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
-      res.status(403);
-      throw new Error("Authorization required: No user in request");
+      throw new AppError("Authorization required: No user in request", 403);
     }
 
     // Role-based check
     if (requiredRoles.length > 0 && !requiredRoles.includes(req.user.role)) {
-      res.status(403);
-      throw new Error(
-        `Insufficient privileges: Requires ${requiredRoles.join(", ")} role(s)`
+      throw new AppError(
+        `Insufficient privileges: Requires ${requiredRoles.join(", ")} role(s)`,
+        403
       );
     }
 
@@ -95,9 +97,9 @@ export const authorize = (
         .map(([perm]) => perm);
 
       if (missingPermissions.length > 0) {
-        res.status(403);
-        throw new Error(
-          `Missing permissions: ${missingPermissions.join(", ")}`
+        throw new AppError(
+          `Missing permissions: ${missingPermissions.join(", ")}`,
+          403
         );
       }
     }
@@ -108,7 +110,7 @@ export const authorize = (
 
 export const createAuthToken = (res: Response, userId: string): string => {
   if (!process.env.JWT_SECRET) {
-    throw new Error("JWT_SECRET environment variable not defined");
+    throw new AppError("JWT_SECRET environment variable not defined", 500);
   }
 
   const token = jwt.sign({ userId }, process.env.JWT_SECRET, {
@@ -130,17 +132,27 @@ export const createAuthToken = (res: Response, userId: string): string => {
   return token;
 };
 
-export const requireAuth = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  if (!req.user) {
-    res.status(401);
-    throw new Error("Not authenticated");
+export const requireAuth = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      throw new AppError("Not authenticated", 401);
+    }
+
+    // Refresh user data from database
+    const freshUser = await User.findById(req.user._id).select(
+      "+authentication.sessionToken"
+    );
+
+    if (!freshUser?.isActive) {
+      res.clearCookie("jwt");
+      throw new AppError("Account deactivated", 403);
+    }
+
+    req.user = freshUser;
+
+    next();
   }
-  next();
-};
+);
 
 // Specific role authorizers
 export const authorizeAdmin = authorize([UserRole.ADMIN]);

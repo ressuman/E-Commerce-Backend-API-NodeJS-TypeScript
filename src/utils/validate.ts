@@ -102,7 +102,6 @@ export const updateUserSchema = z
       .optional(),
     email: z.string().email("Invalid email format").optional(),
     role: z.nativeEnum(UserRole).optional(),
-    password: z.string().min(8).optional(),
     isActive: z.boolean().optional(),
     isVerified: z.boolean().optional(),
   })
@@ -112,13 +111,29 @@ export const roleUpdateSchema = z.object({
   role: z.nativeEnum(UserRole),
 });
 
+export const adminPasswordUpdateSchema = z.object({
+  newPassword: z.string().min(8),
+  forceLogout: z.boolean().default(true),
+});
+
+export const userPasswordUpdateSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Current password is required"),
+    newPassword: z.string().min(8),
+    newPasswordConfirm: z.string().min(8),
+  })
+  .refine((data) => data.newPassword === data.newPasswordConfirm, {
+    message: "Passwords do not match",
+    path: ["newPasswordConfirm"],
+  });
+
 export const permissionsSchema = z.object({
   permissions: z.object({
-    canManageProducts: z.boolean().optional(),
-    canManageOrders: z.boolean().optional(),
-    canManageUsers: z.boolean().optional(),
-    canManageCategories: z.boolean().optional(),
-    canAccessAnalytics: z.boolean().optional(),
+    canManageProducts: z.boolean(),
+    canManageOrders: z.boolean(),
+    canManageUsers: z.boolean(),
+    canManageCategories: z.boolean(),
+    canAccessAnalytics: z.boolean(),
   }),
 });
 

@@ -42,37 +42,3 @@ router.post("/forgot-password", validate(forgotPasswordSchema), forgotPassword);
 router.post("/reset-password", validate(resetPasswordSchema), resetPassword);
 
 export default router;
-
-// // Example admin route for role updates
-// router.patch('/users/:id/role',
-//   authenticate,
-//   authorizeAdmin,
-//   asyncHandler(async (req, res) => {
-//     const user = await User.findByIdAndUpdate(
-//       req.params.id,
-//       { role: req.body.role },
-//       { new: true }
-//     );
-//     // ... return updated user
-//   })
-// );
-
-// // Add this in a separate admin controller
-// router.patch('/users/:id/role',
-//   authenticate,
-//   authorizeAdmin,
-//   asyncHandler(async (req, res) => {
-//     const { id } = req.params;
-//     const { role } = req.body;
-
-//     const updatedUser = await User.updateUserById(id, {
-//       role,
-//       permissions: rolePermissions[role]
-//     });
-
-//     res.json({
-//       status: 'success',
-//       data: updatedUser
-//     });
-//   })
-// );

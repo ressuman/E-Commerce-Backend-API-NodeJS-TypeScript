@@ -46,6 +46,10 @@ export interface IUser extends Document {
   comparePassword(candidatePassword: string): Promise<boolean>;
 }
 
+export interface PasswordConfirmUser extends IUser {
+  passwordConfirm?: string;
+}
+
 // 3. Role-based permissions configuration
 export const rolePermissions: Record<UserRole, UserPermissions> = {
   [UserRole.CUSTOMER]: {
@@ -196,6 +200,14 @@ UserSchema.virtual("passwordConfirm")
     (this as IUser & { _passwordConfirm?: string })._passwordConfirm = value;
   });
 
+// UserSchema.virtual("passwordConfirm")
+//   .get(function (this: PasswordConfirmUser) {
+//     return this.passwordConfirm;
+//   })
+//   .set(function (this: PasswordConfirmUser, value: string) {
+//     this.passwordConfirm = value;
+//   });
+
 UserSchema.pre<IUser>("validate", async function (next) {
   if (this.isModified("authentication.password") || this.isNew) {
     // Manual password confirmation check
@@ -252,6 +264,7 @@ export interface UserModel extends Model<IUser> {
     values: Partial<Omit<IUser, keyof Document | "comparePassword">>
   ): QueryWithHelpers<IUser | null, IUser>;
   deleteUserById(id: string): Promise<IUser | null>;
+  forcePasswordReset(id: string, newPassword: string): Promise<IUser | null>;
 }
 
 UserSchema.statics.getUsers = function () {
@@ -280,13 +293,38 @@ UserSchema.statics.createUser = function (values: Record<string, any>) {
 
 UserSchema.statics.updateUserById = function (
   id: string,
-  values: Partial<Omit<IUser, keyof Document | "comparePassword">>
+  values: Partial<
+    Omit<
+      IUser,
+      keyof Document | "comparePassword" | "authentication" | "passwordConfirm"
+    >
+  >
 ) {
   return this.findByIdAndUpdate(id, values, { new: true });
 };
 
 UserSchema.statics.deleteUserById = function (id: string) {
   return this.findByIdAndDelete(id);
+};
+
+UserSchema.statics.forcePasswordReset = async function (
+  id: string,
+  newPassword: string
+) {
+  const user = (await this.findById(id)) as PasswordConfirmUser;
+  if (!user) return null;
+
+  // Clear existing sessions
+  user.authentication.sessionToken = undefined;
+  user.authentication.resetPasswordToken = undefined;
+  user.authentication.resetPasswordExpires = undefined;
+
+  const userWithConfirm = user as PasswordConfirmUser;
+  userWithConfirm.authentication.password = newPassword;
+  userWithConfirm.passwordConfirm = newPassword;
+
+  await userWithConfirm.save();
+  return userWithConfirm;
 };
 
 // 9. Add virtual ID field

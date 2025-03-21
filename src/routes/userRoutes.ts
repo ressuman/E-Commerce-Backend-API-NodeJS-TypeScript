@@ -7,7 +7,9 @@ import {
   getUserById,
   //getUserProfile,
   updateMyProfile,
+  updateOwnPassword,
   updateUser,
+  updateUserPassword,
   updateUserPermissions,
   //updateUserProfile,
   updateUserRole,
@@ -20,11 +22,13 @@ import {
 } from "@/middlewares/auth.js";
 
 import {
+  adminPasswordUpdateSchema,
   createUserSchema,
   deactivationSchema,
   permissionsSchema,
   roleUpdateSchema,
   updateUserSchema,
+  userPasswordUpdateSchema,
   validate,
 } from "@/utils/validate.js";
 
@@ -43,6 +47,14 @@ router.patch(
   updateMyProfile
 );
 
+router.patch(
+  "/update-my-password",
+  authenticate,
+  requireAuth,
+  validate(userPasswordUpdateSchema),
+  updateOwnPassword
+);
+
 // Admin-only routes // Admin Management Routes
 router.use(authenticate, requireAuth, authorizeAdmin);
 
@@ -53,6 +65,12 @@ router.get("/all-users", getAllUsers);
 router.get("/get-user/:id", getUserById);
 
 router.patch("/update-user/:id", validate(updateUserSchema), updateUser);
+
+router.patch(
+  "/update-user/:id/password",
+  validate(adminPasswordUpdateSchema),
+  updateUserPassword
+);
 
 router.patch(
   "/update-user/:id/role",
@@ -72,14 +90,5 @@ router.patch(
 );
 
 router.delete("/delete-user/:id", deleteUser);
-
-// Mixed authorization routes
-
-// router.patch(
-//   "/update-profile",
-//   authenticate,
-//   validate(updateUserSchema),
-//   updateUserProfile
-// );
 
 export default router;

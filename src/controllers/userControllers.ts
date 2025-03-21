@@ -1,10 +1,12 @@
 import { Request, Response } from "express";
 import { AppError, asyncHandler } from "@/middlewares/asyncHandler.js";
-import User, { IUser, rolePermissions, UserRole } from "@/models/userModel.js";
+import User, {
+  IUser,
+  PasswordConfirmUser,
+  rolePermissions,
+  UserRole,
+} from "@/models/userModel.js";
 import { formatUserResponse } from "@/utils/users.js";
-//import { omit, pick } from "lodash";
-// import pick from "lodash-es/pick";
-// import omit from "lodash-es/omit";
 const { default: pick } = await import("lodash-es/pick");
 const { default: omit } = await import("lodash-es/omit");
 
@@ -62,29 +64,6 @@ export const getMyProfile = asyncHandler(
       .json({ status: "success", data: formatUserResponse(req.user) });
   }
 );
-
-// // Update user profile (self or admin)
-// export const updateUserProfile = asyncHandler(
-//   async (req: Request, res: Response) => {
-//     const userId = req.user?._id.toString();
-//     const updates = req.body;
-
-//     // Prevent role/permission changes from non-admins
-//     if (req.user?.role !== UserRole.ADMIN) {
-//       delete updates.role;
-//       delete updates.permissions;
-//     }
-
-//     const updatedUser = await User.updateUserById(userId, updates)
-//       .select("-authentication -__v")
-//       .lean<IUser>();
-
-//     if (!updatedUser) throw new AppError("User not found", 404);
-//     res
-//       .status(200)
-//       .json({ status: "success", data: formatUserResponse(updatedUser) });
-//   }
-// );
 
 // Update Any User (Admin)
 export const updateUser = asyncHandler(async (req: Request, res: Response) => {
@@ -152,6 +131,71 @@ export const updateMyProfile = asyncHandler(
   }
 );
 
+export const updateUserPassword = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { newPassword, forceLogout } = req.body;
+
+    // Get user document
+    const user = await User.findById(id).select("+authentication.password");
+    if (!user) throw new AppError("User not found", 404);
+
+    // Set new password and confirmation
+    user.authentication.password = newPassword;
+    (user as PasswordConfirmUser).passwordConfirm = newPassword; // Using virtual field
+
+    // Handle force logout
+    if (forceLogout) {
+      user.authentication.sessionToken = undefined;
+    }
+
+    // Save with validation hooks
+    const updatedUser = await user.save();
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        message: "Password updated successfully",
+        user: formatUserResponse(updatedUser),
+      },
+    });
+  }
+);
+
+// User: Update own password
+export const updateOwnPassword = asyncHandler(
+  async (req: Request, res: Response) => {
+    const currentUser = req.user;
+    if (!currentUser) throw new AppError("Authentication required", 401);
+
+    const user = await User.findById(currentUser._id).select(
+      "+authentication.password  +authentication.salt"
+    );
+    if (!user) throw new AppError("User not found", 404);
+
+    const { currentPassword, newPassword, newPasswordConfirm } = req.body;
+
+    // Verify current password
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) throw new AppError("Current password is incorrect", 401);
+
+    // Update password fields
+    user.authentication.password = newPassword;
+    (user as PasswordConfirmUser).passwordConfirm = newPasswordConfirm;
+
+    // Save with validation hooks
+    const updatedUser = await user.save();
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        message: "Password updated successfully",
+        user: formatUserResponse(updatedUser),
+      },
+    });
+  }
+);
+
 // Update User Role (Admin Only)
 export const updateUserRole = asyncHandler(
   async (req: Request, res: Response) => {
@@ -188,6 +232,24 @@ export const updateUserPermissions = asyncHandler(
     const { id } = req.params;
     const { permissions } = req.body;
 
+    const user = await User.getUserById(id);
+    if (!user) throw new AppError("User not found", 404);
+
+    // Validate permissions against role
+    const rolePerms = rolePermissions[user.role];
+    const invalidPerms = Object.entries(permissions)
+      .filter(
+        ([key, value]) => value && !rolePerms[key as keyof UserPermissions]
+      )
+      .map(([key]) => key);
+
+    if (invalidPerms.length > 0) {
+      throw new AppError(
+        `Invalid permissions for ${user.role} role: ${invalidPerms.join(", ")}`,
+        400
+      );
+    }
+
     const updatedUser = await User.updateUserById(id, { permissions })
       .select(
         "firstName lastName username email role permissions isVerified isActive createdAt updatedAt"
@@ -195,9 +257,14 @@ export const updateUserPermissions = asyncHandler(
       .lean<IUser>();
 
     if (!updatedUser) throw new AppError("User not found", 404);
-    res
-      .status(200)
-      .json({ status: "success", data: formatUserResponse(updatedUser) });
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        permissions: updatedUser.permissions,
+        role: updatedUser.role,
+      },
+    });
   }
 );
 
@@ -214,6 +281,7 @@ export const deactivateUser = asyncHandler(
     });
 
     if (!updatedUser) throw new AppError("User not found", 404);
+
     res.status(204).json({ status: "success", data: null });
   }
 );
@@ -221,7 +289,10 @@ export const deactivateUser = asyncHandler(
 // Admin: Delete user (hard delete)
 export const deleteUser = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
+
   const user = await User.deleteUserById(id);
+
   if (!user) throw new AppError("User not found", 404);
+
   res.status(204).json({ status: "success", data: null });
 });
