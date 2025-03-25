@@ -140,3 +140,175 @@ export const permissionsSchema = z.object({
 export const deactivationSchema = z.object({
   reason: z.string().min(10).max(500),
 });
+
+export const categoryCreateSchema = z.object({
+  name: z
+    .string()
+    .min(2, "Category name is required")
+    .max(50, "Category name cannot exceed 50 characters"),
+  description: z
+    .string()
+    .max(200, "Description cannot exceed 200 characters")
+    .optional(),
+  parent: z
+    .string()
+    .regex(/^[0-9a-fA-F]{24}$/, "Invalid parent ID")
+    .optional()
+    .nullable(),
+  isActive: z.boolean().optional(),
+});
+
+export const categoryUpdateSchema = z
+  .object({
+    name: z
+      .string()
+      .min(2, "Category name is required")
+      .max(50, "Category name cannot exceed 50 characters")
+      .optional(),
+    description: z
+      .string()
+      .max(200, "Description cannot exceed 200 characters")
+      .optional()
+      .nullable(),
+    parent: z
+      .string()
+      .regex(/^[0-9a-fA-F]{24}$/)
+      .optional()
+      .nullable(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "At least one field must be provided for update",
+    path: [],
+  });
+
+export const productCreateSchema = z.object({
+  name: z
+    .string()
+    .min(2, "Name must be at least 2 characters")
+    .max(200, "Name cannot exceed 200 characters"),
+  slug: z
+    .string()
+    .regex(/^[a-z0-9-]+$/, "Invalid slug format")
+    .optional(),
+  sku: z
+    .string()
+    .regex(/^[A-Z0-9-]{8,}$/, "Invalid SKU format")
+    .optional(),
+  description: z
+    .string()
+    .min(50, "Description must be at least 50 characters")
+    .max(2000, "Description cannot exceed 2000 characters"),
+  price: z.number().min(0.01, "Price must be at least 0.01").positive(),
+  originalPrice: z
+    .number()
+    .min(0.01, "Original price must be greater than 0")
+    .optional(),
+  images: z
+    .array(z.string().url("Invalid image URL"))
+    .min(1, "At least one image is required")
+    .max(10, "Maximum 10 images allowed"),
+  category: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid category ID"),
+  brand: z.string().min(1, "Brand is required"),
+  manufacturer: z.string().min(1, "Manufacturer is required"),
+  weight: z.number().min(1, "Weight must be at least 1 gram").positive(),
+  dimensions: z.object({
+    length: z.number().min(1, "Length must be at least 1 cm").positive(),
+    width: z.number().min(1, "Width must be at least 1 cm").positive(),
+    height: z.number().min(1, "Height must be at least 1 cm").positive(),
+  }),
+  stock: z
+    .number()
+    .int("Stock must be an integer")
+    .min(0, "Stock cannot be negative"),
+  tags: z.array(z.string().min(1)).min(1, "At least one tag required").max(20),
+  shippingInfo: z.object({
+    weight: z
+      .number()
+      .min(1, "Shipping weight must be at least 1 gram")
+      .positive(),
+    dimensions: z
+      .string()
+      .min(1, "Shipping dimensions are required")
+      .regex(/^\d+x\d+x\d+$/, "Invalid dimensions format"),
+    requiresShipping: z.boolean().default(true),
+  }),
+  availability: z.enum(["in-stock", "out-of-stock", "pre-order"]).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const productUpdateSchema = productCreateSchema
+  .omit({ slug: true, sku: true, createdBy: true })
+  .partial()
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "At least one field must be provided for update",
+    path: [],
+  });
+
+export const productListingSchema = z.object({
+  limit: z.coerce.number().int().positive().max(100).optional().default(10),
+});
+
+export const inventoryCheckSchema = z
+  .array(
+    z.object({
+      productId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid product ID"),
+      qty: z
+        .number()
+        .int()
+        .min(1, "Minimum quantity is 1")
+        .positive("Quantity must be a positive integer"),
+    })
+  )
+  .min(1, "At least one item required");
+
+export const reserveStockSchema = z.object({
+  productId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid product ID"),
+  quantity: z.number().int().min(1, "Minimum quantity is 1"),
+});
+
+export const productSearchSchema = z
+  .object({
+    //q: z.string().min(1, "Search query is required"),
+    q: z.coerce.string().min(1, "Search query is required"), // ✅ Handle type conversion
+    minPrice: z.coerce.number().optional(), // ✅ Handle string→number conversion
+    maxPrice: z.coerce.number().optional(),
+    brands: z
+      .string()
+      .regex(/^[a-zA-Z0-9_,-]+$/, "Invalid brand format")
+      .optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.minPrice && data.maxPrice) {
+        return data.maxPrice > data.minPrice;
+      }
+      return true;
+    },
+    {
+      message: "Max price must be greater than min price",
+      path: ["maxPrice"],
+    }
+  );
+
+export const reviewCreateSchema = z.object({
+  rating: z.number().min(1).max(5),
+  title: z.string().min(5).max(100),
+  comment: z.string().min(10).max(1000),
+  verifiedPurchase: z.boolean().optional(),
+});
+
+export const reviewUpdateSchema = reviewCreateSchema
+  .partial()
+  .refine((data) => {
+    return Object.keys(data).length > 0;
+  }, "At least one field must be provided");
+
+export const priceChangeSchema = z.object({
+  newPrice: z.number().min(0.01),
+  reason: z.string().min(10).max(500).optional(),
+});
+
+export const reviewIdSchema = z.object({
+  reviewId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid review ID"),
+});

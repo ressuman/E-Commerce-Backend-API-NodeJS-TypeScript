@@ -163,3 +163,22 @@ export const authorizeSupport = authorize([UserRole.SUPPORT]);
 export const authorizeProductManagement = authorize([], {
   canManageProducts: true,
 });
+
+export const authorizeInventoryManagement = authorize([], {
+  canManageProducts: true,
+  canManageOrders: true,
+});
+
+export const authorizeReviewModification = authorize(
+  [UserRole.MODERATOR, UserRole.ADMIN],
+  {
+    canManageProducts: true,
+  }
+);
+
+export const authorizeReviewInteraction = authorize(
+  [UserRole.CUSTOMER, UserRole.MODERATOR, UserRole.ADMIN],
+  {
+    canManageProducts: false, // Customers can interact without full product permissions
+  }
+);

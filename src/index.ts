@@ -14,6 +14,8 @@ import { errorHandler, notFound } from "./middlewares/errorHandler.js";
 import connectDB from "@/config/db.js";
 import authRoutes from "@/routes/authenticationRoutes.js";
 import userRoutes from "@/routes/userRoutes.js";
+import categoryRoutes from "@/routes/categoryRoutes.js";
+import productRoutes from "@/routes/productRoutes.js";
 
 // Database Connection
 connectDB();
@@ -39,7 +41,7 @@ app.use(compression());
 app.use(cookieParser());
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 50,
+  max: 100,
   message: "Too many requests from this IP, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
@@ -49,6 +51,13 @@ app.use("/api", limiter);
 // Routes
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
+app.use("/api/v1/categories", categoryRoutes);
+app.use("/api/v1/products", productRoutes);
+
+app.get("*", (req, res, next) => {
+  res.set("Cache-Control", "public, max-age=300");
+  next();
+});
 
 // Error Handling Middleware
 app.use(notFound);

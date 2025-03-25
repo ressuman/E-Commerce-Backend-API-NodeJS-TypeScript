@@ -15,6 +15,20 @@ export const asyncHandler = <T = void>(
   };
 };
 
+// export const asyncHandler = (
+//   fn: (req: Request, res: Response, next: NextFunction) => Promise<any>
+// ) => {
+//   return (req: Request, res: Response, next: NextFunction) => {
+//     Promise.resolve(fn(req, res, next)).catch((err) => {
+//       // Ensure proper JSON error response
+//       res.status(err.statusCode || 500).json({
+//         status: "error",
+//         message: err.message || "Internal Server Error",
+//       });
+//     });
+//   };
+// };
+
 export class AppError extends Error {
   statusCode: number;
 

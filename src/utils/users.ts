@@ -1,4 +1,5 @@
 import { IUser, UserPermissions, UserRole } from "@/models/userModel.js";
+import { Document } from "mongoose";
 
 export interface UserProfileResponse {
   id: string;
@@ -26,4 +27,124 @@ export const formatUserResponse = (user: IUser): UserProfileResponse => ({
   isActive: user.isActive,
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
+});
+
+export interface CategoryResponse {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  createdBy: {
+    id: string;
+    username: string;
+    email: string;
+  };
+  updatedBy?: string;
+}
+
+export const formatCategoryResponse = (category: any): CategoryResponse => ({
+  id: category._id.toString(),
+  name: category.name,
+  slug: category.slug,
+  description: category.description,
+  isActive: category.isActive,
+  createdAt: category.createdAt,
+  updatedAt: category.updatedAt,
+  createdBy: {
+    id: category.createdBy._id.toString(),
+    username: category.createdBy.username,
+    email: category.createdBy.email,
+  },
+  updatedBy: category.updatedBy,
+});
+
+export interface ProductResponse {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  images: string[];
+  category: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  stock: number;
+  ratingsAverage?: number;
+  ratingsQuantity?: number;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  createdBy: {
+    id: string;
+    username: string;
+    email: string;
+  };
+  searchScore?: number;
+}
+
+export const formatProductResponse = (product: any): ProductResponse => ({
+  id: product._id.toString(),
+  name: product.name,
+  description: product.description,
+  price: product.price,
+  images: product.images,
+  category: {
+    id: product.category._id.toString(),
+    name: product.category.name,
+    slug: product.category.slug,
+  },
+  stock: product.stock,
+  ratingsAverage: product.ratingsAverage,
+  ratingsQuantity: product.ratingsQuantity,
+  isActive: product.isActive,
+  createdAt: product.createdAt,
+  updatedAt: product.updatedAt,
+  createdBy: {
+    id: product.createdBy._id.toString(),
+    username: product.createdBy.username,
+    email: product.createdBy.email,
+  },
+  searchScore: product.score ? Number(product.score.toFixed(3)) : undefined,
+});
+
+export interface ReviewResponse {
+  id: string;
+  rating: number;
+  title: string;
+  comment: string;
+  verifiedPurchase: boolean;
+  likes: number;
+  dislikes: number;
+  userReaction: {
+    liked: boolean;
+    disliked: boolean;
+  };
+  user: {
+    id: string;
+    username: string;
+    email: string;
+  };
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export const formatReviewResponse = async (review: any) => ({
+  id: review._id.toString(),
+  rating: review.rating,
+  title: review.title,
+  comment: review.comment,
+  verifiedPurchase: review.verifiedPurchase,
+  likes: review.likes,
+  dislikes: review.dislikes,
+  userReaction: {
+    liked: review.likedBy.includes(review.user?._id),
+    disliked: review.dislikedBy.includes(review.user?._id),
+  },
+  user: formatUserResponse(review.user),
+  createdAt: review.createdAt,
+  updatedAt: review.updatedAt,
 });

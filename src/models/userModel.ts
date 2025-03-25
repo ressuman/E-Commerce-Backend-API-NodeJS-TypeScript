@@ -16,6 +16,8 @@ export type UserPermissions = {
   canManageUsers: boolean;
   canManageCategories: boolean;
   canAccessAnalytics: boolean;
+  canUploadImages: boolean;
+  canManagePricing: boolean;
 };
 
 // 2. Define interface for TypeScript type checking
@@ -58,6 +60,8 @@ export const rolePermissions: Record<UserRole, UserPermissions> = {
     canManageUsers: false,
     canManageCategories: false,
     canAccessAnalytics: false,
+    canUploadImages: false,
+    canManagePricing: false,
   },
   [UserRole.MODERATOR]: {
     canManageProducts: true,
@@ -65,6 +69,8 @@ export const rolePermissions: Record<UserRole, UserPermissions> = {
     canManageUsers: false,
     canManageCategories: true,
     canAccessAnalytics: true,
+    canUploadImages: true,
+    canManagePricing: false,
   },
   [UserRole.SUPPORT]: {
     canManageProducts: false,
@@ -72,6 +78,8 @@ export const rolePermissions: Record<UserRole, UserPermissions> = {
     canManageUsers: false,
     canManageCategories: false,
     canAccessAnalytics: false,
+    canUploadImages: false,
+    canManagePricing: false,
   },
   [UserRole.ADMIN]: {
     canManageProducts: true,
@@ -79,6 +87,8 @@ export const rolePermissions: Record<UserRole, UserPermissions> = {
     canManageUsers: true,
     canManageCategories: true,
     canAccessAnalytics: true,
+    canUploadImages: true,
+    canManagePricing: true,
   },
 };
 
@@ -130,6 +140,8 @@ const UserSchema = new Schema<IUser>(
         canManageUsers: Boolean,
         canManageCategories: Boolean,
         canAccessAnalytics: Boolean,
+        canUploadImages: Boolean,
+        canManagePricing: Boolean,
       },
       default: rolePermissions[UserRole.CUSTOMER],
     },
