@@ -2,7 +2,7 @@
 import { Document, Model, Schema, model, Types, ClientSession } from "mongoose";
 import validator from "validator";
 import Review from "./reviewModel.js";
-import { UserRole } from "./userModel.js";
+import User, { UserRole } from "./userModel.js";
 import { AppError } from "@/middlewares/asyncHandler.js";
 import PriceHistory from "./priceHistoryModel.js";
 import slugify from "slugify";
@@ -240,16 +240,18 @@ const productSchema = new Schema<IProduct, ProductModel>(
       type: Number,
       default: 0,
     },
-    reviews: [
-      {
-        type: Schema.Types.ObjectId,
-        ref: "Review",
-        validate: {
-          validator: (reviews: Types.ObjectId[]) => reviews.length <= 500,
-          message: "Maximum 500 reviews per product",
+    reviews: {
+      type: [
+        {
+          type: Schema.Types.ObjectId,
+          ref: "Review",
         },
+      ],
+      validate: {
+        validator: (reviews: Types.ObjectId[]) => reviews.length <= 500,
+        message: "Maximum 500 reviews per product",
       },
-    ],
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -667,38 +669,75 @@ productSchema.statics.getProductAnalytics = async function () {
 
 // 9. Post-Save Hook for Reviews
 productSchema.pre("save", async function (next) {
-  try {
-    // Only run for existing documents (updates)
-    if (!this.isNew) {
-      // Handle price changes
-      if (this.isModified("price")) {
-        const currentPrice = this.price;
-        const previousPrice = this.get("price", null, { defaults: false });
+  const session = this.$session();
 
-        // Only log if price actually changed
-        if (previousPrice !== null && currentPrice !== previousPrice) {
-          await PriceHistory.create({
-            product: this._id,
-            oldPrice: previousPrice,
-            newPrice: currentPrice,
-            changedBy: this.updatedBy || this.createdBy,
-          });
+  try {
+    // Track if we need to recalculate ratings
+    let shouldRecalculateRatings = false;
+
+    if (!this.isNew) {
+      const modifiedPaths = this.modifiedPaths();
+
+      // 1. Price Change Handling with Authorization
+      if (modifiedPaths.includes("price")) {
+        const originalDoc = await this.constructor
+          .findById(this._id)
+          .session(session);
+        const previousPrice = originalDoc?.price;
+
+        if (previousPrice && previousPrice !== this.price) {
+          // Authorization check for price decreases
+          if (this.price < previousPrice) {
+            const user = await User.findById(this.updatedBy)
+              .select("role permissions")
+              .session(session)
+              .orFail(new AppError("User not found", 404));
+
+            if (
+              !(
+                user.role === UserRole.ADMIN ||
+                user.permissions.canManagePricing
+              )
+            ) {
+              throw new AppError("Unauthorized price reduction", 403);
+            }
+          }
+
+          // Log price history within transaction
+          await PriceHistory.create(
+            [
+              {
+                product: this._id,
+                oldPrice: previousPrice,
+                newPrice: this.price,
+                changedBy: this.updatedBy || this.createdBy,
+              },
+            ],
+            { session }
+          );
         }
       }
 
-      // Handle review updates
+      // 2. Review Updates Handling
       if (this.isModified("reviews")) {
-        await (this.constructor as ProductModel).calculateAverageRating(
-          this._id
-        );
+        shouldRecalculateRatings = true;
       }
     }
 
+    // 3. Stock Updates Handling
     if (this.isModified("stock")) {
       if (this.stock < 0) {
         throw new AppError("Stock cannot be negative", 400);
       }
       this.availability = this.stock > 0 ? "in-stock" : "out-of-stock";
+    }
+
+    // 5. Post-save operations
+    if (shouldRecalculateRatings) {
+      await (this.constructor as ProductModel).calculateAverageRating(
+        this._id.toString(),
+        session
+      );
     }
 
     next();

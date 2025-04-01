@@ -11,6 +11,7 @@ import {
   reserveStockSchema,
 } from "@/utils/validate.js";
 import { Request, Response } from "express";
+import mongoose from "mongoose";
 import slugify from "slugify";
 
 export const createProduct = asyncHandler(
@@ -170,22 +171,32 @@ export const getProductDetails = asyncHandler(
 export const updateProduct = asyncHandler(
   async (req: Request, res: Response) => {
     const validated = productUpdateSchema.parse(req.body);
-    const product = await Product.updateById(
-      req.params.productId,
-      validated,
-      req.user!._id.toString()
-    );
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
-    if (!product) throw new AppError("Product not found", 404);
+    try {
+      const product = await Product.findById(req.params.productId).session(
+        session
+      ); // Use the session
+      if (!product) throw new AppError("Product not found", 404);
 
-    const populated = await Product.findById(product.id)
-      .populate("category", "name slug")
-      .populate("createdBy", "username email");
+      product.updatedBy = req.user!._id;
+      Object.assign(product, validated);
+      await product.save({ session }); // Pass session to save()
 
-    res.json({
-      status: "success",
-      data: formatProductResponse(populated!),
-    });
+      const populated = await Product.findById(product.id)
+        .populate("category", "name slug")
+        .populate("createdBy", "username email")
+        .session(session); // Same session
+
+      await session.commitTransaction();
+      res.json({ status: "success", data: formatProductResponse(populated!) });
+    } catch (error: any) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
   }
 );
 

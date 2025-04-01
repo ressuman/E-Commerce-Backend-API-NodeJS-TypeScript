@@ -235,6 +235,10 @@ export const productCreateSchema = z.object({
   }),
   availability: z.enum(["in-stock", "out-of-stock", "pre-order"]).optional(),
   isActive: z.boolean().optional(),
+  reviews: z
+    .array(z.string().regex(/^[0-9a-fA-F]{24}$/))
+    .max(500)
+    .optional(),
 });
 
 export const productUpdateSchema = productCreateSchema

@@ -54,25 +54,31 @@ const priceHistorySchema = new Schema<IPriceHistory>(
 );
 
 priceHistorySchema.index({ product: 1, createdAt: -1 }); // Price history lookup
+priceHistorySchema.index({ changedBy: 1 });
 
-priceHistorySchema.statics.logPriceChange = function (
-  productId,
-  oldPrice,
-  newPrice,
-  userId
+priceHistorySchema.statics.logPriceChange = async function (
+  productId: string,
+  oldPrice: number,
+  newPrice: number,
+  userId: string
 ) {
   return this.create({
-    product: productId,
+    product: new Types.ObjectId(productId),
     oldPrice,
     newPrice,
-    changedBy: userId,
+    changedBy: new Types.ObjectId(userId),
   });
 };
 
 priceHistorySchema.statics.getPriceHistory = function (productId: string) {
-  return this.find({ product: productId })
-    .populate("changedBy", "username email role")
-    .sort("-createdAt");
+  return this.find({ product: new Types.ObjectId(productId) })
+    .populate({
+      path: "changedBy",
+      select: "username email role",
+      model: "User",
+    })
+    .sort("-createdAt")
+    .lean();
 };
 
 const PriceHistory = model<IPriceHistory>("PriceHistory", priceHistorySchema);

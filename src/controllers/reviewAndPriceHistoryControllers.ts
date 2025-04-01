@@ -142,7 +142,7 @@ export const getPriceHistory = asyncHandler(
       data: history.map((entry) => ({
         oldPrice: entry.oldPrice,
         newPrice: entry.newPrice,
-        changedBy: formatUserResponse(entry.changedBy),
+        changedBy: entry.changedBy ? formatUserResponse(entry.changedBy) : null,
         changedAt: entry.createdAt,
       })),
     });
