@@ -177,7 +177,7 @@ export const authorizeReviewModification = authorize(
 );
 
 export const authorizeReviewInteraction = authorize(
-  [UserRole.CUSTOMER, UserRole.MODERATOR, UserRole.ADMIN],
+  [UserRole.CUSTOMER, UserRole.MODERATOR, UserRole.ADMIN, UserRole.SUPPORT],
   {
     canManageProducts: false, // Customers can interact without full product permissions
   }

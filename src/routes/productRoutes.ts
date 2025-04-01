@@ -39,7 +39,6 @@ import {
   productUpdateSchema,
   reserveStockSchema,
   reviewCreateSchema,
-  reviewIdSchema,
   reviewUpdateSchema,
   validate,
 } from "@/utils/validate.js";
@@ -82,20 +81,14 @@ router.post(
   validate(reviewCreateSchema),
   createReview
 );
-router.get(
-  "/reviews/:reviewId/get-review",
-  validate(reviewIdSchema),
-  getReview
-);
+router.get("/reviews/get-review/:reviewId", getReview);
 router.patch(
-  "/reviews/:reviewId/like",
-  validate(reviewIdSchema),
+  "/reviews/get-review/:reviewId/like",
   authorizeReviewInteraction,
   likeReview
 );
 router.patch(
-  "/reviews/:reviewId/dislike",
-  validate(reviewIdSchema),
+  "/reviews/get-review/:reviewId/dislike",
   authorizeReviewInteraction,
   dislikeReview
 );
@@ -129,11 +122,11 @@ router.delete("/delete-product/:productId", deleteProduct);
 router.use(authorizeReviewModification);
 
 router.patch(
-  "/update-reviews/:reviewId/reviews",
+  "/reviews/update-review/:reviewId",
   validate(reviewUpdateSchema),
   updateReview
 );
-router.delete("/delete-reviews/:reviewId/reviews", deleteReview);
+router.delete("/reviews/delete-review/:reviewId", deleteReview);
 
 // Admin-only routes
 router.use(authorizeAdmin);

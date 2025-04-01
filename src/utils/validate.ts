@@ -296,6 +296,15 @@ export const reviewCreateSchema = z.object({
   title: z.string().min(5).max(100),
   comment: z.string().min(10).max(1000),
   verifiedPurchase: z.boolean().optional(),
+  // Add these to preserve reference IDs
+  product: z
+    .string()
+    .regex(/^[0-9a-fA-F]{24}$/, "Invalid product ID")
+    .optional(),
+  user: z
+    .string()
+    .regex(/^[0-9a-fA-F]{24}$/, "Invalid user ID")
+    .optional(),
 });
 
 export const reviewUpdateSchema = reviewCreateSchema
@@ -307,8 +316,4 @@ export const reviewUpdateSchema = reviewCreateSchema
 export const priceChangeSchema = z.object({
   newPrice: z.number().min(0.01),
   reason: z.string().min(10).max(500).optional(),
-});
-
-export const reviewIdSchema = z.object({
-  reviewId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid review ID"),
 });

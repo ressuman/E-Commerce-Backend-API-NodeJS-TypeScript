@@ -1,5 +1,5 @@
 import { IUser, UserPermissions, UserRole } from "@/models/userModel.js";
-import { Document } from "mongoose";
+import { Types, Document } from "mongoose";
 
 export interface UserProfileResponse {
   id: string;
@@ -127,24 +127,71 @@ export interface ReviewResponse {
     id: string;
     username: string;
     email: string;
-  };
+  } | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
-export const formatReviewResponse = async (review: any) => ({
-  id: review._id.toString(),
-  rating: review.rating,
-  title: review.title,
-  comment: review.comment,
-  verifiedPurchase: review.verifiedPurchase,
-  likes: review.likes,
-  dislikes: review.dislikes,
-  userReaction: {
-    liked: review.likedBy.includes(review.user?._id),
-    disliked: review.dislikedBy.includes(review.user?._id),
-  },
-  user: formatUserResponse(review.user),
-  createdAt: review.createdAt,
-  updatedAt: review.updatedAt,
-});
+// export const formatReviewResponse = async (review: any) => ({
+//   id: review._id.toString(),
+//   rating: review.rating,
+//   title: review.title,
+//   comment: review.comment,
+//   verifiedPurchase: review.verifiedPurchase,
+//   likes: review.likes,
+//   dislikes: review.dislikes,
+//   userReaction: {
+//     liked: review.likedBy.some((id: Types.ObjectId) =>
+//       id.equals(review.user?._id || review.user)
+//     ),
+//     disliked: review.dislikedBy.some((id: Types.ObjectId) =>
+//       id.equals(review.user?._id || review.user)
+//     ),
+//   },
+//   user: review.user
+//     ? {
+//         id: review.user._id.toString(),
+//         username: review.user.username,
+//         email: review.user.email,
+//       }
+//     : null,
+//   createdAt: review.createdAt,
+//   updatedAt: review.updatedAt,
+// });
+export const formatReviewResponse = async (
+  review: any,
+  currentUserId?: string // Add current user ID parameter
+) => {
+  const currentUserObj = currentUserId
+    ? new Types.ObjectId(currentUserId)
+    : null;
+
+  return {
+    id: review._id.toString(),
+    rating: review.rating,
+    title: review.title,
+    comment: review.comment,
+    verifiedPurchase: review.verifiedPurchase,
+    likes: review.likes,
+    dislikes: review.dislikes,
+    userReaction: {
+      liked: currentUserObj
+        ? review.likedBy.some((id: Types.ObjectId) => id.equals(currentUserObj))
+        : false,
+      disliked: currentUserObj
+        ? review.dislikedBy.some((id: Types.ObjectId) =>
+            id.equals(currentUserObj)
+          )
+        : false,
+    },
+    user: review.user
+      ? {
+          id: review.user._id.toString(),
+          username: review.user.username,
+          email: review.user.email,
+        }
+      : null,
+    createdAt: review.createdAt,
+    updatedAt: review.updatedAt,
+  };
+};

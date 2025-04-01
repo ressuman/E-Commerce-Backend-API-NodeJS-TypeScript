@@ -1,5 +1,5 @@
 // src/models/productModel.ts
-import { Document, Model, Schema, model, Types } from "mongoose";
+import { Document, Model, Schema, model, Types, ClientSession } from "mongoose";
 import validator from "validator";
 import Review from "./reviewModel.js";
 import { UserRole } from "./userModel.js";
@@ -244,6 +244,10 @@ const productSchema = new Schema<IProduct, ProductModel>(
       {
         type: Schema.Types.ObjectId,
         ref: "Review",
+        validate: {
+          validator: (reviews: Types.ObjectId[]) => reviews.length <= 500,
+          message: "Maximum 500 reviews per product",
+        },
       },
     ],
     isActive: {
@@ -306,6 +310,22 @@ productSchema.index(
 // Virtuals
 productSchema.virtual("id").get(function (this: IProduct) {
   return this._id.toHexString();
+});
+
+productSchema.virtual("reviewsList", {
+  ref: "Review",
+  localField: "reviews",
+  foreignField: "_id",
+  match: { isDeleted: false },
+});
+
+// Add this to your existing pre-save hooks
+productSchema.pre(/^find/, function () {
+  this.populate({
+    path: "reviews",
+    select: "-__v -updatedAt -isDeleted",
+    match: { isDeleted: false },
+  });
 });
 
 // Static methods
@@ -465,7 +485,10 @@ productSchema.statics.restoreById = async function (
 };
 
 // 8. Review Calculation Middleware
-productSchema.statics.calculateAverageRating = async function (productId) {
+productSchema.statics.calculateAverageRating = async function (
+  productId: string,
+  session: ClientSession | null = null
+) {
   const stats = await Review.aggregate([
     {
       $match: {
@@ -480,19 +503,18 @@ productSchema.statics.calculateAverageRating = async function (productId) {
         ratingsAverage: { $avg: "$rating" },
       },
     },
-  ]);
+  ]).session(session!); // Enforce session usage
 
-  if (stats.length > 0) {
-    await this.findByIdAndUpdate(productId, {
-      ratingsAverage: stats[0].ratingsAverage,
-      ratingsQuantity: stats[0].ratingsQuantity,
-    });
-  } else {
-    await this.findByIdAndUpdate(productId, {
-      ratingsAverage: 4.5,
-      ratingsQuantity: 0,
-    });
-  }
+  const updateOps = {
+    ratingsAverage: stats[0]?.ratingsAverage || 4.5,
+    ratingsQuantity: stats[0]?.ratingsQuantity || 0,
+  };
+
+  await this.findByIdAndUpdate(
+    productId,
+    { $set: updateOps },
+    { session, new: true, runValidators: true } // Maintain session context
+  );
 };
 
 productSchema.statics.checkInventory = async function (

@@ -1,5 +1,5 @@
 // src/models/reviewModel.ts
-import { Document, Model, Schema, model, Types } from "mongoose";
+import mongoose, { Document, Model, Schema, model, Types } from "mongoose";
 import Product from "./productModel.js";
 
 /**
@@ -35,7 +35,7 @@ export interface ReviewModel extends Model<IReview> {
   ): Promise<IReview | null>;
   deleteReview(reviewId: string, userId: string): Promise<IReview | null>;
   getProductReviews(productId: string): Promise<IReview[]>;
-  getReviewById(id: string): Promise<IReview | null>;
+  getReviewById(reviewId: string): Promise<IReview | null>;
   toggleLike(reviewId: string, userId: string): Promise<IReview | null>;
   toggleDislike(reviewId: string, userId: string): Promise<IReview | null>;
 }
@@ -132,14 +132,50 @@ reviewSchema.index({ user: 1, product: 1 }, { unique: true }); // Prevent duplic
 reviewSchema.index({ rating: 1 }); // Rating filter
 
 reviewSchema.statics.createReview = async function (data, userId) {
-  const review = await this.create({
-    ...data,
-    createdBy: userId,
-    updatedBy: userId,
-  });
+  const session = await mongoose.startSession();
+  try {
+    let createdReview: IReview | null = null;
 
-  await Product.calculateAverageRating(data.product.toString());
-  return review;
+    await session.withTransaction(async () => {
+      // Convert IDs properly within the transaction
+      const productId = new Types.ObjectId(data.product);
+      const userIdObj = new Types.ObjectId(userId);
+
+      // Create review with session
+      const review = new this({
+        ...data,
+        product: productId,
+        user: userIdObj,
+        createdBy: userIdObj,
+        updatedBy: userIdObj,
+      });
+
+      await review.save({ session });
+
+      // Update product with session
+      await Product.findByIdAndUpdate(
+        productId,
+        { $push: { reviews: review._id } },
+        { session, new: true }
+      );
+
+      // Calculate ratings with session
+      await Product.calculateAverageRating(productId.toString(), session);
+
+      // Populate within transaction using session
+      createdReview = await this.findById(review._id)
+        .populate({
+          path: "user",
+          select: "username email",
+          options: { session }, // <-- Critical session attachment
+        })
+        .session(session);
+    });
+
+    return createdReview;
+  } finally {
+    await session.endSession(); // Proper session cleanup
+  }
 };
 
 reviewSchema.statics.updateReview = async function (reviewId, data, userId) {
@@ -185,9 +221,11 @@ reviewSchema.statics.getProductReviews = function (productId) {
     .sort("-createdAt");
 };
 
-reviewSchema.statics.getReviewById = function (id: string) {
-  return this.findById(id)
+reviewSchema.statics.getReviewById = function (reviewId: string) {
+  return this.findById(reviewId)
     .populate("user", "username avatar")
+    .populate("likedBy", "_id")
+    .populate("dislikedBy", "_id")
     .populate("createdBy", "username");
 };
 
@@ -195,12 +233,14 @@ reviewSchema.statics.toggleLike = async function (reviewId, userId) {
   const review = await this.findById(reviewId);
   if (!review) return null;
 
-  const userIndex = review.likedBy.indexOf(userId);
+  const userIdObj = new Types.ObjectId(userId); // Convert to ObjectId
+
+  const userIndex = review.likedBy.indexOf(userIdObj);
   if (userIndex === -1) {
     review.likes += 1;
-    review.likedBy.push(userId);
+    review.likedBy.push(userIdObj);
     // Remove dislike if exists
-    const dislikeIndex = review.dislikedBy.indexOf(userId);
+    const dislikeIndex = review.dislikedBy.indexOf(userIdObj);
     if (dislikeIndex !== -1) {
       review.dislikes -= 1;
       review.dislikedBy.splice(dislikeIndex, 1);
@@ -217,12 +257,14 @@ reviewSchema.statics.toggleDislike = async function (reviewId, userId) {
   const review = await this.findById(reviewId);
   if (!review) return null;
 
-  const userIndex = review.dislikedBy.indexOf(userId);
+  const userIdObj = new Types.ObjectId(userId); // Convert to ObjectId
+
+  const userIndex = review.dislikedBy.indexOf(userIdObj);
   if (userIndex === -1) {
     review.dislikes += 1;
-    review.dislikedBy.push(userId);
+    review.dislikedBy.push(userIdObj);
     // Remove like if exists
-    const likeIndex = review.likedBy.indexOf(userId);
+    const likeIndex = review.likedBy.indexOf(userIdObj);
     if (likeIndex !== -1) {
       review.likes -= 1;
       review.likedBy.splice(likeIndex, 1);
