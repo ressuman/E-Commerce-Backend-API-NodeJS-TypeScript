@@ -13,52 +13,90 @@ import {
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 import slugify from "slugify";
+import {
+  rollbackCloudinaryUploads,
+  uploadToCloudinary,
+} from "./uploadControllers.js";
 
 export const createProduct = asyncHandler(
   async (req: Request, res: Response) => {
-    const user = req.user!;
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
-    const validated = productCreateSchema.parse(req.body);
+    let cloudinaryResults: any[] = [];
 
-    // Generate slug if not provided
-    const slug =
-      validated.slug ||
-      slugify(validated.name, {
-        lower: true,
-        strict: true,
+    try {
+      const user = req.user!;
+
+      const validated = productCreateSchema.parse(req.body);
+
+      // Check for uploaded images
+      if (!req.files?.length) {
+        throw new AppError("At least one product image is required", 400);
+      }
+
+      // 3. Process file uploads
+      cloudinaryResults = await uploadToCloudinary(req.files);
+
+      // Generate slug if not provided
+      const slug =
+        validated.slug ||
+        slugify(validated.name, {
+          lower: true,
+          strict: true,
+        });
+
+      // Generate SKU if not provided
+      const sku =
+        validated.sku || generateSKU(validated.name, validated.category);
+
+      const imageUrls = cloudinaryResults?.map((r) => r.secure_url) || [];
+
+      const productData = {
+        ...validated,
+        slug,
+        sku,
+        images: imageUrls,
+        createdBy: user._id,
+        updatedBy: user._id,
+        availability:
+          validated.availability ||
+          (validated.stock > 0 ? "in-stock" : "out-of-stock"),
+      };
+
+      // 5. Create product in transaction
+      const [product] = await Product.create([productData], { session });
+
+      // 6. Commit transaction
+      await session.commitTransaction();
+
+      // Return formatted response
+      const populated = await Product.findById(product.id)
+        .populate("category", "name slug")
+        .populate("createdBy", "username email")
+        .exec();
+
+      if (!populated) throw new AppError("Product creation failed", 500);
+
+      res.status(201).json({
+        status: "success",
+        data: {
+          ...formatProductResponse(populated!),
+          imageCount: cloudinaryResults.length,
+        },
       });
+    } catch (error: any) {
+      // Rollback everything on error
+      await session.abortTransaction();
 
-    // Generate SKU if not provided
-    const sku =
-      validated.sku || generateSKU(validated.name, validated.category);
+      if (cloudinaryResults.length > 0) {
+        await rollbackCloudinaryUploads(cloudinaryResults);
+      }
 
-    const productData = {
-      ...validated,
-      slug,
-      sku,
-      createdBy: user._id,
-      availability:
-        validated.availability ||
-        (validated.stock > 0 ? "in-stock" : "out-of-stock"),
-    };
-
-    const product = await Product.create({
-      ...productData,
-      createdBy: user._id,
-      updatedBy: user._id,
-    });
-
-    const populated = await Product.findById(product.id)
-      .populate("category", "name slug")
-      .populate("createdBy", "username email")
-      .exec();
-
-    if (!populated) throw new AppError("Product creation failed", 500);
-
-    res.status(201).json({
-      status: "success",
-      data: formatProductResponse(populated),
-    });
+      throw error;
+    } finally {
+      session.endSession();
+    }
   }
 );
 
@@ -177,22 +215,44 @@ export const updateProduct = asyncHandler(
     try {
       const product = await Product.findById(req.params.productId).session(
         session
-      ); // Use the session
+      );
       if (!product) throw new AppError("Product not found", 404);
+
+      // Handle image updates
+      if (validated.replaceImages) {
+        if (!req.cloudinaryResults?.length) {
+          throw new AppError(
+            "Replacing images requires uploading new images",
+            400
+          );
+        }
+        product.images = req.cloudinaryResults.map((r) => r.secure_url);
+      } else if (req.cloudinaryResults?.length) {
+        const newImages = req.cloudinaryResults.map((r) => r.secure_url);
+        product.images = [...product.images, ...newImages].slice(0, 10);
+      }
 
       product.updatedBy = req.user!._id;
       Object.assign(product, validated);
-      await product.save({ session }); // Pass session to save()
+      await product.save({ session });
+
+      await session.commitTransaction();
 
       const populated = await Product.findById(product.id)
         .populate("category", "name slug")
-        .populate("createdBy", "username email")
-        .session(session); // Same session
+        .populate("createdBy", "username email");
 
-      await session.commitTransaction();
-      res.json({ status: "success", data: formatProductResponse(populated!) });
+      res.json({
+        status: "success",
+        data: formatProductResponse(populated!),
+      });
     } catch (error: any) {
       await session.abortTransaction();
+
+      if (req.cloudinaryResults?.length) {
+        await rollbackCloudinaryUploads(req.cloudinaryResults);
+      }
+
       throw error;
     } finally {
       session.endSession();

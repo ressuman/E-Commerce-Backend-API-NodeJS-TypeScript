@@ -1,4 +1,4 @@
-import express from "express";
+import express, { NextFunction, Request, Response } from "express";
 
 import {
   checkInventory,
@@ -53,6 +53,14 @@ import {
   likeReview,
   updateReview,
 } from "@/controllers/reviewAndPriceHistoryControllers.js";
+
+import {
+  handleImageCleanup,
+  handleStandaloneImageUpload,
+  processImageUpload,
+  uploadProductImages,
+  verifyCloudinaryFolder,
+} from "@/controllers/uploadControllers.js";
 
 const router = express.Router();
 
@@ -110,10 +118,34 @@ router.post(
 // Protected management routes (requires product permissions)(Moderators & Admins)
 router.use(authorizeProductManagement);
 
-router.post("/add-product", validate(productCreateSchema), createProduct);
+// Image management routes
+router.post(
+  "/media/upload/images",
+  verifyCloudinaryFolder,
+  uploadProductImages,
+  processImageUpload,
+  handleImageCleanup,
+  handleStandaloneImageUpload
+);
+router.post(
+  "/add-product",
+  verifyCloudinaryFolder,
+  uploadProductImages,
+  (req: Request, res: Response, next: NextFunction) => {
+    req.operationType = "create-product";
+    next();
+  },
+  processImageUpload,
+  validate(productCreateSchema),
+  handleImageCleanup,
+  createProduct
+);
 router.put(
   "/update-product/:productId",
+  uploadProductImages,
+  processImageUpload,
   validate(productUpdateSchema),
+  handleImageCleanup,
   updateProduct
 );
 router.delete("/delete-product/:productId", deleteProduct);

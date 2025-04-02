@@ -132,32 +132,6 @@ export interface ReviewResponse {
   updatedAt: Date;
 }
 
-// export const formatReviewResponse = async (review: any) => ({
-//   id: review._id.toString(),
-//   rating: review.rating,
-//   title: review.title,
-//   comment: review.comment,
-//   verifiedPurchase: review.verifiedPurchase,
-//   likes: review.likes,
-//   dislikes: review.dislikes,
-//   userReaction: {
-//     liked: review.likedBy.some((id: Types.ObjectId) =>
-//       id.equals(review.user?._id || review.user)
-//     ),
-//     disliked: review.dislikedBy.some((id: Types.ObjectId) =>
-//       id.equals(review.user?._id || review.user)
-//     ),
-//   },
-//   user: review.user
-//     ? {
-//         id: review.user._id.toString(),
-//         username: review.user.username,
-//         email: review.user.email,
-//       }
-//     : null,
-//   createdAt: review.createdAt,
-//   updatedAt: review.updatedAt,
-// });
 export const formatReviewResponse = async (
   review: any,
   currentUserId?: string // Add current user ID parameter

@@ -1,4 +1,5 @@
-import { v2 as cloudinary, ConfigOptions } from "cloudinary";
+// src/config/cloudinary.ts
+import { v2 as cloudinary } from "cloudinary";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -9,8 +10,6 @@ type CloudinaryConfig = {
   api_secret: string;
 };
 
-type MaybeString = string | undefined;
-
 class CloudinaryConfigError extends Error {
   constructor(missingKeys: string[]) {
     super(`Missing Cloudinary configuration: ${missingKeys.join(", ")}`);
@@ -18,44 +17,28 @@ class CloudinaryConfigError extends Error {
   }
 }
 
-const requiredCloudinaryKeys: (keyof CloudinaryConfig)[] = [
+const requiredKeys: (keyof CloudinaryConfig)[] = [
   "cloud_name",
   "api_key",
   "api_secret",
 ];
 
-function hasRequiredKeys(
-  config: Partial<CloudinaryConfig>
-): config is CloudinaryConfig {
-  return requiredCloudinaryKeys.every((key) => config[key] !== undefined);
-}
-
 export const initializeCloudinary = (): typeof cloudinary => {
-  const config: Partial<CloudinaryConfig> = {
+  const config = {
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET,
+
+    use_filename: true,
+    unique_filename: true,
+    overwrite: false,
   };
 
-  if (!hasRequiredKeys(config)) {
-    const missingKeys = requiredCloudinaryKeys.filter((key) => !config[key]);
-    throw new CloudinaryConfigError(missingKeys);
-  }
+  const missingKeys = requiredKeys.filter((key) => !config[key]);
+  if (missingKeys.length) throw new CloudinaryConfigError(missingKeys);
 
-  const frozenConfig = Object.freeze({ ...config });
-  cloudinary.config(frozenConfig);
-
+  cloudinary.config(config);
   return cloudinary;
 };
 
 export default initializeCloudinary();
-
-// // For Cloudinary
-// import cloudinary from './utils/cloudinary';
-
-// export const uploadImage = async (file: string) => {
-//   return cloudinary.uploader.upload(file, {
-//     folder: 'uploads',
-//     resource_type: 'auto',
-//   });
-// };

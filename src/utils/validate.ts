@@ -199,31 +199,36 @@ export const productCreateSchema = z.object({
     .string()
     .min(50, "Description must be at least 50 characters")
     .max(2000, "Description cannot exceed 2000 characters"),
-  price: z.number().min(0.01, "Price must be at least 0.01").positive(),
-  originalPrice: z
+  price: z.coerce.number().min(0.01, "Price must be at least 0.01").positive(),
+  originalPrice: z.coerce
     .number()
     .min(0.01, "Original price must be greater than 0")
     .optional(),
-  images: z
-    .array(z.string().url("Invalid image URL"))
-    .min(1, "At least one image is required")
-    .max(10, "Maximum 10 images allowed"),
   category: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid category ID"),
   brand: z.string().min(1, "Brand is required"),
   manufacturer: z.string().min(1, "Manufacturer is required"),
-  weight: z.number().min(1, "Weight must be at least 1 gram").positive(),
+  weight: z.coerce.number().min(1, "Weight must be at least 1 gram").positive(),
   dimensions: z.object({
-    length: z.number().min(1, "Length must be at least 1 cm").positive(),
-    width: z.number().min(1, "Width must be at least 1 cm").positive(),
-    height: z.number().min(1, "Height must be at least 1 cm").positive(),
+    length: z.coerce.number().min(1, "Length must be at least 1 cm").positive(),
+    width: z.coerce.number().min(1, "Width must be at least 1 cm").positive(),
+    height: z.coerce.number().min(1, "Height must be at least 1 cm").positive(),
   }),
-  stock: z
+  stock: z.coerce
     .number()
     .int("Stock must be an integer")
     .min(0, "Stock cannot be negative"),
-  tags: z.array(z.string().min(1)).min(1, "At least one tag required").max(20),
+  tags: z
+    .string()
+    .transform((val) => {
+      try {
+        return JSON.parse(val);
+      } catch {
+        return val.split(",");
+      }
+    })
+    .pipe(z.array(z.string()).min(1, "At least one tag required").max(20)),
   shippingInfo: z.object({
-    weight: z
+    weight: z.coerce
       .number()
       .min(1, "Shipping weight must be at least 1 gram")
       .positive(),
@@ -231,7 +236,10 @@ export const productCreateSchema = z.object({
       .string()
       .min(1, "Shipping dimensions are required")
       .regex(/^\d+x\d+x\d+$/, "Invalid dimensions format"),
-    requiresShipping: z.boolean().default(true),
+    requiresShipping: z.coerce
+      .boolean()
+      .or(z.enum(["1", "0"]).transform((val) => val === "1"))
+      .default(true),
   }),
   availability: z.enum(["in-stock", "out-of-stock", "pre-order"]).optional(),
   isActive: z.boolean().optional(),
@@ -243,6 +251,9 @@ export const productCreateSchema = z.object({
 
 export const productUpdateSchema = productCreateSchema
   .omit({ slug: true, sku: true, createdBy: true })
+  .extend({
+    replaceImages: z.coerce.boolean().optional(),
+  })
   .partial()
   .refine((data) => Object.keys(data).length > 0, {
     message: "At least one field must be provided for update",
@@ -273,7 +284,6 @@ export const reserveStockSchema = z.object({
 
 export const productSearchSchema = z
   .object({
-    //q: z.string().min(1, "Search query is required"),
     q: z.coerce.string().min(1, "Search query is required"), // ✅ Handle type conversion
     minPrice: z.coerce.number().optional(), // ✅ Handle string→number conversion
     maxPrice: z.coerce.number().optional(),
@@ -300,7 +310,6 @@ export const reviewCreateSchema = z.object({
   title: z.string().min(5).max(100),
   comment: z.string().min(10).max(1000),
   verifiedPurchase: z.boolean().optional(),
-  // Add these to preserve reference IDs
   product: z
     .string()
     .regex(/^[0-9a-fA-F]{24}$/, "Invalid product ID")
