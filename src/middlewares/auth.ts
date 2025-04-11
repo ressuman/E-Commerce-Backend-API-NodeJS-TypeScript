@@ -182,3 +182,10 @@ export const authorizeReviewInteraction = authorize(
     canManageProducts: false, // Customers can interact without full product permissions
   }
 );
+
+export const authorizeOrderManagement = authorize(
+  [UserRole.ADMIN, UserRole.SUPPORT, UserRole.MODERATOR],
+  {
+    canManageOrders: true,
+  }
+);

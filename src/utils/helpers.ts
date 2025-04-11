@@ -29,13 +29,3 @@ export const generateSKU = (
 
   return `${categoryPrefix}-${namePrefix}-${randomString}`;
 };
-
-// /**
-//  * Checks if a value is a valid MongoDB ObjectId
-//  *
-//  * @param id - The ID to validate
-//  * @returns Boolean indicating if ID is valid
-//  */
-// export const isValidObjectId = (id: string): boolean => {
-//   return /^[0-9a-fA-F]{24}$/.test(id);
-// };

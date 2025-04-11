@@ -1,4 +1,10 @@
 // src/utils/validate.ts
+import {
+  Currency,
+  OrderStatus,
+  PaymentMethod,
+  ShippingMethod,
+} from "@/models/orderModel.js";
 import { UserRole } from "@/models/userModel.js";
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
@@ -329,4 +335,86 @@ export const reviewUpdateSchema = reviewCreateSchema
 export const priceChangeSchema = z.object({
   newPrice: z.number().min(0.01),
   reason: z.string().min(10).max(500).optional(),
+});
+
+export const orderCreateSchema = z.object({
+  orderItems: z
+    .array(
+      z.object({
+        product: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid product ID"),
+        name: z.string().min(2),
+        quantity: z.number().int().min(1, "Quantity must be at least 1"),
+        price: z.number().min(0.01),
+        image: z.string().url(),
+        sku: z.string().regex(/^[A-Z0-9-]{8,}$/),
+      })
+    )
+    .min(1, "At least one order item is required"),
+  shippingAddress: z.object({
+    fullName: z.string().min(2, "Full name is required"),
+    street: z.string().min(2, "Street is required"),
+    address: z.string().min(2, "Address is required"),
+    city: z.string().min(2, "City is required"),
+    state: z.string().optional(),
+    postalCode: z.string().min(3, "Postal code is required"),
+    country: z.string().min(2, "Country is required"),
+    phoneNumber: z.string().min(6, "Phone number is required"),
+    coordinates: z
+      .object({
+        lat: z.number().min(-90).max(90).optional(),
+        lng: z.number().min(-180).max(180).optional(),
+      })
+      .optional(),
+  }),
+  paymentMethod: z.nativeEnum(PaymentMethod),
+  shippingMethod: z.nativeEnum(ShippingMethod),
+  currency: z.nativeEnum(Currency).optional(),
+  taxRate: z.number().min(0, "Tax rate cannot be negative").optional(),
+  taxInfo: z
+    .object({
+      taxRate: z.number().min(0).max(1).optional(),
+      taxId: z.string().optional(),
+    })
+    .optional(),
+  discountInfo: z
+    .object({
+      code: z.string().optional(),
+      amount: z.number().min(0),
+      type: z.enum(["percentage", "fixed"]),
+    })
+    .optional(),
+});
+
+export const orderUpdateSchema = orderCreateSchema.partial();
+
+export const updateOrderStatusSchema = z.object({
+  status: z.nativeEnum(OrderStatus),
+  cancellationReason: z.string().optional(),
+});
+
+export const processPaymentSchema = z.object({
+  paymentId: z.string().min(1, "Payment ID is required"),
+  status: z.string().min(1, "Payment status is required"),
+  email: z.string().email("Invalid email format"),
+  amountReceived: z.number().min(0, "Amount received cannot be negative"),
+});
+
+export const fulfillOrderSchema = z.object({
+  trackingNumber: z.string().min(1, "Tracking number is required"),
+  shippingProvider: z.string().min(1, "Shipping provider is required"),
+});
+
+export const dateRangeSchema = z.object({
+  startDate: z
+    .string()
+    .refine((val) => !isNaN(Date.parse(val)), "Invalid start date"),
+  endDate: z
+    .string()
+    .refine((val) => !isNaN(Date.parse(val)), "Invalid end date"),
+});
+
+export const salesByPeriodSchema = z.object({
+  period: z.enum(["day", "week", "month", "year"], {
+    errorMap: () => ({ message: "Invalid period" }),
+  }),
 });

@@ -169,3 +169,53 @@ export const formatReviewResponse = async (
     updatedAt: review.updatedAt,
   };
 };
+
+export interface OrderResponse {
+  id: string;
+  orderNumber: string;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  status: string;
+  statusHistory: Array<{
+    status: string;
+    timestamp: Date;
+    description: string;
+  }>;
+  totalPrice: number;
+  items: Array<{
+    productId: string;
+    name: string;
+    quantity: number;
+    price: number;
+  }>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export const formatOrderResponse = (order: any): OrderResponse => ({
+  id: order._id.toString(),
+  orderNumber: order.orderNumber,
+  user: {
+    id: order.user._id.toString(),
+    name: `${order.user.firstName} ${order.user.lastName}`,
+    email: order.user.email,
+  },
+  status: order.status,
+  statusHistory: order.statusHistory.map((h: any) => ({
+    status: h.status,
+    timestamp: h.timestamp,
+    description: h.description,
+  })),
+  totalPrice: order.totalPrice,
+  items: order.orderItems.map((item: any) => ({
+    productId: item.product._id.toString(),
+    name: item.name,
+    quantity: item.quantity,
+    price: item.price,
+  })),
+  createdAt: order.createdAt,
+  updatedAt: order.updatedAt,
+});
