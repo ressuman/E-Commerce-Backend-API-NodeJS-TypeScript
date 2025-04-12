@@ -9,6 +9,7 @@ import {
   forgotPassword,
   resetPassword,
   login,
+  refreshTokens,
 } from "@/controllers/authenticationControllers.js";
 
 import { authenticate } from "@/middlewares/auth.js";
@@ -16,6 +17,7 @@ import { authenticate } from "@/middlewares/auth.js";
 import {
   forgotPasswordSchema,
   loginSchema,
+  refreshTokenSchema,
   resendOtpSchema,
   resetPasswordSchema,
   signupSchema,
@@ -28,6 +30,12 @@ const router = express.Router();
 router.post("/signup", validate(signupSchema), signup);
 
 router.post("/verify-email", validate(verifyEmailSchema), verifyEmail);
+
+router.post(
+  "/refresh-token",
+  //validate(refreshTokenSchema),
+  refreshTokens
+);
 
 router.post("/login", validate(loginSchema), login);
 

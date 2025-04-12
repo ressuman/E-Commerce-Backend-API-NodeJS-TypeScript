@@ -219,3 +219,47 @@ export const formatOrderResponse = (order: any): OrderResponse => ({
   createdAt: order.createdAt,
   updatedAt: order.updatedAt,
 });
+
+export interface CartItemResponse {
+  product: ReturnType<typeof formatProductResponse>;
+  quantity: number;
+  priceAtAddition: number;
+  nameAtAddition: string;
+  image: string;
+}
+
+export interface CartResponse {
+  id: string;
+  items: CartItemResponse[];
+  totalQuantity: number;
+  totalPrice: number;
+  subTotal: number;
+  currency: string;
+  discounts: Record<string, number>;
+  lastUpdated: Date;
+  status: "active" | "abandoned" | "converted";
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export const formatCartItem = (item: any): CartItemResponse => ({
+  product: item.product ? formatProductResponse(item.product) : null,
+  quantity: item.quantity,
+  priceAtAddition: item.priceAtAddition,
+  nameAtAddition: item.nameAtAddition,
+  image: item.image,
+});
+
+export const formatCartResponse = (cart: any): CartResponse => ({
+  id: cart._id.toString(),
+  items: cart.items.map(formatCartItem),
+  totalQuantity: cart.totalQuantity,
+  totalPrice: cart.totalPrice,
+  subTotal: cart.subTotal,
+  currency: cart.currency,
+  discounts: Object.fromEntries(cart.discounts),
+  lastUpdated: cart.lastUpdated,
+  status: cart.status,
+  createdAt: cart.createdAt,
+  updatedAt: cart.updatedAt,
+});

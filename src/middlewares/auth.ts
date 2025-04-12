@@ -38,32 +38,60 @@ export type AuthCookieOptions = {
   maxAge: number;
 };
 
+export type TokenPair = {
+  accessToken: string;
+  refreshToken: string;
+};
+
 export const authenticate = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
-    const token = req.cookies?.jwt;
+    //const token = req.cookies?.jwt;
+    const accessToken = req.cookies?.accessToken;
 
-    if (token) {
+    // if (token) {
+    //   try {
+    //     const decoded = jwt.verify(
+    //       token,
+    //       process.env.JWT_SECRET!
+    //     ) as JwtPayload;
+
+    //     const user = await User.findById(decoded.userId).select(
+    //       "+authentication.password +authentication.salt"
+    //     );
+
+    //     if (user && user.isVerified) {
+    //       req.user = user; // Attach lean user object
+    //     }
+    //   } catch (error) {
+    //     // Silent failure - just don't attach user
+    //     console.error("Authentication error:", error);
+    //     res.clearCookie("jwt");
+    //   }
+    // }
+    if (accessToken) {
       try {
         const decoded = jwt.verify(
-          token,
+          accessToken,
           process.env.JWT_SECRET!
         ) as JwtPayload;
 
         const user = await User.findById(decoded.userId).select(
           "+authentication.password +authentication.salt"
         );
-        // .select(
-        //   "_id email role isVerified firstName lastName username authentication permissions"
-        // )
-        // .lean<IUser>();
 
         if (user && user.isVerified) {
           req.user = user; // Attach lean user object
         }
       } catch (error) {
-        // Silent failure - just don't attach user
+        // Handle token expiration specifically
+        if (error.name === "TokenExpiredError") {
+          return next(new AppError("Access token expired", 401));
+        }
+
         console.error("Authentication error:", error);
-        res.clearCookie("jwt");
+
+        res.clearCookie("accessToken");
+        res.clearCookie("refreshToken");
       }
     }
     next();
@@ -108,28 +136,72 @@ export const authorize = (
   };
 };
 
-export const createAuthToken = (res: Response, userId: string): string => {
+export const createAuthTokens = async (
+  res: Response,
+  userId: string
+): Promise<TokenPair> => {
   if (!process.env.JWT_SECRET) {
     throw new AppError("JWT_SECRET environment variable not defined", 500);
   }
 
-  const token = jwt.sign({ userId }, process.env.JWT_SECRET, {
-    expiresIn: "14d",
+  // const token = jwt.sign({ userId }, process.env.JWT_SECRET, {
+  //   expiresIn: "14d",
+  //   algorithm: "HS256",
+  // });
+
+  // Access Token (15 minutes)
+  // Generate access token (short-lived)
+  const accessToken = jwt.sign({ userId }, process.env.JWT_SECRET!, {
+    expiresIn: "15m", // 15 minutes
     algorithm: "HS256",
   });
 
-  const cookieOptions: AuthCookieOptions = {
+  // Refresh Token (7 days)
+  // Generate refresh token (long-lived)
+  const refreshToken = jwt.sign({ userId }, process.env.JWT_SECRET!, {
+    expiresIn: "7d", // 7 days
+    algorithm: "HS256",
+  });
+
+  // const cookieOptions: AuthCookieOptions = {
+  //   httpOnly: true,
+  //   secure: process.env.NODE_ENV === "production",
+  //   sameSite:
+  //     process.env.NODE_ENV === "production"
+  //       ? SameSiteOptions.None
+  //       : SameSiteOptions.Lax,
+  //   maxAge: 14 * 24 * 60 * 60 * 1000, // 14 days
+  // };
+
+  // Set cookies
+  const accessCookieOptions: AuthCookieOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite:
       process.env.NODE_ENV === "production"
         ? SameSiteOptions.None
         : SameSiteOptions.Lax,
-    maxAge: 14 * 24 * 60 * 60 * 1000, // 14 days
+    maxAge: 15 * 60 * 1000, // 15 minutes
   };
 
-  res.cookie("jwt", token, cookieOptions);
-  return token;
+  const refreshCookieOptions: AuthCookieOptions = {
+    ...accessCookieOptions,
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  };
+
+  //res.cookie("jwt", token, cookieOptions);
+  res.cookie("accessToken", accessToken, accessCookieOptions);
+  res.cookie("refreshToken", refreshToken, refreshCookieOptions);
+  //return token;
+  // Store refresh token in DB
+  await User.findByIdAndUpdate(userId, {
+    "authentication.refreshToken": refreshToken,
+    "authentication.refreshTokenExpires": new Date(
+      Date.now() + 7 * 24 * 60 * 60 * 1000
+    ), //  // 7 days
+  });
+
+  return { accessToken, refreshToken };
 };
 
 export const requireAuth = asyncHandler(
@@ -187,5 +259,21 @@ export const authorizeOrderManagement = authorize(
   [UserRole.ADMIN, UserRole.SUPPORT, UserRole.MODERATOR],
   {
     canManageOrders: true,
+    canProcessPayments: true,
+    canUpdateOrderStatus: true,
+  }
+);
+
+export const authorizePaymentProcessing = authorize(
+  [UserRole.ADMIN, UserRole.MODERATOR],
+  {
+    canProcessPayments: true,
+  }
+);
+
+export const authorizeFulfillment = authorize(
+  [UserRole.ADMIN, UserRole.SUPPORT],
+  {
+    canManageFulfillment: true,
   }
 );

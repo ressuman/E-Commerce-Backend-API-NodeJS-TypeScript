@@ -54,6 +54,10 @@ export const verifyEmailSchema = z.object({
   otp: z.string().length(6, "OTP must be 6 digits"),
 });
 
+export const refreshTokenSchema = z.object({
+  refreshToken: z.string().min(1, "Refresh token is required"),
+});
+
 export const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(1, "Password is required"),
@@ -417,4 +421,21 @@ export const salesByPeriodSchema = z.object({
   period: z.enum(["day", "week", "month", "year"], {
     errorMap: () => ({ message: "Invalid period" }),
   }),
+});
+
+export const addToCartSchema = z.object({
+  productId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid product ID"),
+  quantity: z.coerce
+    .number()
+    .int()
+    .min(1, "Quantity must be at least 1")
+    .max(100, "Quantity cannot exceed 100"),
+});
+
+export const updateCartItemSchema = z.object({
+  quantity: z.coerce
+    .number()
+    .int()
+    .min(0, "Quantity must be at least 0")
+    .max(100, "Quantity cannot exceed 100"),
 });

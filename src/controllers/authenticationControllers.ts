@@ -1,15 +1,23 @@
 // src/controllers/authenticationControllers.ts
 // Dependencies
 import { NextFunction, Request, Response } from "express";
-import { asyncHandler } from "@/middlewares/asyncHandler.js";
+import jwt from "jsonwebtoken";
+import { AppError, asyncHandler } from "@/middlewares/asyncHandler.js";
 import User, { IUser, rolePermissions, UserRole } from "@/models/userModel.js";
 import {
   generateOTP,
   OTP_EXPIRY_MINUTES,
   verifyOTP,
 } from "@/utils/generateOtp.js";
-import { createAuthToken } from "@/middlewares/auth.js";
+import {
+  //createAuthToken,
+  createAuthTokens,
+  JwtPayload,
+} from "@/middlewares/auth.js";
 import sendEmail from "@/utils/email.js";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 // Type definitions
 interface SignupRequest {
@@ -296,9 +304,9 @@ export const verifyEmail = asyncHandler(
       });
     }
 
-    // Generate JWT token
+    // Generate JWT token- Generate both tokens
     //createAuthToken(res, updatedUser!._id.toString());
-    const token = createAuthToken(
+    const tokens = await createAuthTokens(
       res,
       (updatedUser!._id as Types.ObjectId).toString()
     );
@@ -306,13 +314,57 @@ export const verifyEmail = asyncHandler(
     res.status(200).json({
       status: "success",
       message: "Account verified successfully",
-      token,
+      tokens: {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      },
       data: {
         id: updatedUser._id,
         username: user.username,
         email: updatedUser.email,
         role: updatedUser.role,
         isVerified: updatedUser.isVerified,
+      },
+    });
+  }
+);
+
+export const refreshTokens = asyncHandler(
+  async (req: Request, res: Response) => {
+    const refreshToken = req.cookies?.refreshToken;
+
+    if (!refreshToken) {
+      throw new AppError("Refresh token required", 401);
+    }
+
+    // Verify refresh token
+    const decoded = jwt.verify(
+      refreshToken,
+      process.env.JWT_SECRET!
+    ) as JwtPayload;
+
+    // Check DB validity
+    const user = await User.findById(decoded.userId).select(
+      "+authentication.refreshToken +authentication.refreshTokenExpires"
+    );
+
+    if (!user || user.authentication.refreshToken !== refreshToken) {
+      throw new AppError("Invalid refresh token", 401);
+    }
+
+    if (user.authentication.refreshTokenExpires! < new Date()) {
+      throw new AppError("Refresh token expired", 401);
+    }
+
+    // Generate new tokens
+    const tokens = await createAuthTokens(res, user._id.toString());
+
+    res.status(200).json({
+      status: "success",
+      message: "Tokens refreshed",
+      data: {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
       },
     });
   }
@@ -365,12 +417,15 @@ export const login = asyncHandler(
     }
 
     // 5. Generate new token and send response
-    const token = createAuthToken(res, user._id.toString());
+    const tokens = await createAuthTokens(res, user._id.toString());
 
     res.status(200).json({
       status: "success",
       message: "Logged in successfully",
-      token,
+      tokens: {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      },
       data: {
         id: user._id,
         username: user.username,
@@ -384,12 +439,27 @@ export const login = asyncHandler(
 
 // Logout Controller
 export const logout = asyncHandler(async (req: Request, res: Response) => {
-  res.cookie("jwt", "loggedOut", {
-    expires: new Date(Date.now() + 1000), // expires in 1 second
+  // Clear tokens from DB if user exists
+  if (req.user) {
+    await User.findByIdAndUpdate(req.user._id, {
+      $unset: {
+        "authentication.refreshToken": "",
+        "authentication.refreshTokenExpires": "",
+      },
+    });
+  }
+
+  // Clear cookies securely
+  const cookieOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-  });
+    sameSite: "strict" as const,
+    expires: new Date(Date.now() + 1000), // expires in 1 second
+  };
+
+  // Clear cookies
+  res.cookie("accessToken", "access-token-logged-out", cookieOptions);
+  res.cookie("refreshToken", "refresh-token-logged-out", cookieOptions);
 
   res.status(200).json({
     status: "success",

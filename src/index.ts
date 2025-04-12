@@ -16,6 +16,7 @@ import authRoutes from "@/routes/authenticationRoutes.js";
 import userRoutes from "@/routes/userRoutes.js";
 import categoryRoutes from "@/routes/categoryRoutes.js";
 import productRoutes from "@/routes/productRoutes.js";
+import cartRoutes from "@/routes/cartRoutes.js";
 import orderRoutes from "@/routes/orderRoutes.js";
 
 // Database Connection
@@ -54,6 +55,7 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/categories", categoryRoutes);
 app.use("/api/v1/products", productRoutes);
+app.use("/api/v1/cart", cartRoutes);
 app.use("/api/v1/orders", orderRoutes);
 
 app.get("*", (req, res, next) => {
